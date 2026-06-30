@@ -1,0 +1,40 @@
+{
+  "name": "elixir-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env src/index.js",
+    "api:start": "pm2 start ecosystem.config.cjs",
+    "api:status": "pm2 status",
+    "api:logs": "pm2 logs elixir-api --lines 50",
+    "api:restart": "pm2 restart elixir-api",
+    "api:stop": "pm2 stop elixir-api",
+    "db:studio": "prisma studio",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "node prisma/seed.js"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "@solana/web3.js": "^1.98.4",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.2.0",
+    "nodemailer": "^8.0.11",
+    "otplib": "^12.0.1",
+    "qrcode": "^1.5.4",
+    "stripe": "^22.2.2"
+  },
+  "devDependencies": {
+    "pm2": "^7.0.1",
+    "prisma": "^6.19.3"
+  }
+}

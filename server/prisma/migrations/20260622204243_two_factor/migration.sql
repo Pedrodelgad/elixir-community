@@ -1,0 +1,3 @@
+-- 2FA (TOTP)
+ALTER TABLE "User" ADD COLUMN "twoFactorSecret" TEXT;
+ALTER TABLE "User" ADD COLUMN "twoFactorEnabled" BOOLEAN NOT NULL DEFAULT false;

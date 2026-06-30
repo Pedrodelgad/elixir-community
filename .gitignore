@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+server/node_modules/
+
+# Environment
+server/.env
+.env
+
+# Database
+server/prisma/dev.db
+server/prisma/dev.db-journal
+server/prisma/dev.db-shm
+server/prisma/dev.db-wal
+
+# Logs
+server/logs/
+*.log
+
+# Build
+dist/
+build/
+
+# OS
+.DS_Store
+server/bin/
+

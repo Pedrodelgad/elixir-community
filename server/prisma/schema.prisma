@@ -1,0 +1,109 @@
+// Schema do banco Elixir — SQLite via Prisma
+// Para visualizar o banco: npm run db:studio (abre interface no navegador)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// Contas de usuário (membros e admin)
+model User {
+  id           Int           @id @default(autoincrement())
+  name         String
+  handle       String        @unique
+  email        String        @unique
+  password     String?       // null para contas criadas via Discord OAuth
+  role         String        @default("member") // "member" | "admin"
+  createdAt    DateTime      @default(now())
+  discordId    String?       @unique  // ID do Discord do usuário
+  discordToken String?                // access token OAuth para adicionar ao servidor
+  // Programa de afiliados (Rewardful)
+  affiliateId    String?     @unique  // UUID do afiliado no Rewardful
+  affiliateToken String?     @unique  // token do link (?via=token)
+  affiliateLink  String?              // URL do link de afiliado (campo url do Rewardful)
+  // 2FA (TOTP — app autenticador)
+  twoFactorSecret  String?            // segredo TOTP (base32)
+  twoFactorEnabled Boolean  @default(false)
+  subscription Subscription?
+  comments     Comment[]
+}
+
+// Catálogo de planos — os produtos vendidos no site
+model Plan {
+  id            String         @id // "free" | "alpha-1m" | "alpha-3m" | "alpha-1y"
+  name          String
+  badge         String?        // "1 mês", "3 meses", "1 ano"
+  priceSol      Float          // 0 no gratuito (pagamento crypto, futuro)
+  priceBrl      Int?           // preço em centavos de R$ (Stripe cartão/PIX). 4990 = R$ 49,90
+  durationDays  Float?         // null = sem prazo (gratuito)
+  subscriptions Subscription[]
+}
+
+// Assinatura Alpha — uma por usuário, com validade
+model Subscription {
+  id                   Int      @id @default(autoincrement())
+  planId               String
+  plan                 Plan     @relation(fields: [planId], references: [id])
+  priceSol             Float    @default(0)
+  priceBrl             Int      @default(0) // centavos pagos via Stripe
+  startsAt             DateTime @default(now())
+  expiresAt            DateTime
+  status               String   @default("active") // active | canceled | past_due
+  stripeCustomerId     String?  // cliente Stripe (cartão e PIX)
+  stripeSubscriptionId String?  @unique // só no fluxo de cartão recorrente
+  userId               Int      @unique
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Reviews da comunidade
+model Comment {
+  id        Int      @id @default(autoincrement())
+  text      String
+  likes     Int      @default(0)
+  createdAt DateTime @default(now())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Vídeos postados pelo admin (legado — substituído por Content; mantido por compat)
+model Video {
+  id        Int      @id @default(autoincrement())
+  title     String
+  url       String?
+  duration  String?
+  createdAt DateTime @default(now())
+}
+
+// Área do Aluno — árvore de categorias (seção → rede → tópico → ...)
+model Category {
+  id        Int        @id @default(autoincrement())
+  name      String
+  parentId  Int?
+  parent    Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children  Category[] @relation("CategoryTree")
+  position  Int        @default(0)
+  createdAt DateTime   @default(now())
+  contents  Content[]
+
+  @@index([parentId])
+}
+
+// Conteúdo dentro de uma categoria: vídeo ou ferramenta
+model Content {
+  id          Int      @id @default(autoincrement())
+  categoryId  Int
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  type        String   @default("video") // "video" | "tool"
+  title       String
+  url         String?  // vídeo: link externo · ferramenta: caminho do arquivo em /uploads
+  fileName    String?  // ferramenta: nome original do arquivo enviado (para download)
+  description String?
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([categoryId])
+}

@@ -1,0 +1,100 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', sans-serif;
+
+  /* Paleta oficial Elixir */
+  --color-e-deep:    #020617;
+  --color-e-base:    #061A2B;
+  --color-e-card:    #0B2E4A;
+  --color-e-mid:     #164A73;
+  --color-e-slate:   #1F2D3D;
+  --color-e-blue:    #3A7BD5;
+  --color-e-bright:  #7AA7FF;
+  --color-e-hi:      #F2F6FF;
+  --color-e-text:    #C8D6EB;
+  --color-e-muted:   #8FA4C4;
+  --color-e-lo:      #3a5268;
+
+  --animate-ticker:    ticker 35s linear infinite;
+  --animate-pulse-dot: pulse-dot 2s infinite;
+  --animate-shimmer:   shimmer 2.5s ease-in-out infinite;
+}
+
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+@keyframes shimmer {
+  0%   { transform: translateX(-100%) skewX(-12deg); }
+  100% { transform: translateX(300%)  skewX(-12deg); }
+}
+
+@keyframes navScan {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+@keyframes navLineSweep {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(500%); }
+}
+
+@keyframes blob1 {
+  0%, 100% { transform: translate(0px, 0px); }
+  33%      { transform: translate(380px, -200px); }
+  66%      { transform: translate(-260px, 160px); }
+}
+
+@keyframes blob2 {
+  0%, 100% { transform: translate(0px, 0px); }
+  40%      { transform: translate(-420px, 220px); }
+  70%      { transform: translate(280px, -150px); }
+}
+
+@keyframes blob3 {
+  0%, 100% { transform: translate(0px, 0px); }
+  30%      { transform: translate(300px, 250px); }
+  70%      { transform: translate(-340px, -180px); }
+}
+
+@layer base {
+  html { scroll-behavior: smooth; }
+  body {
+    background-color: #020617;
+    color: #F2F6FF;
+    font-family: 'Inter', sans-serif;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  a { text-decoration: none; color: inherit; }
+
+  ::selection {
+    background: rgba(58,123,213,0.35);
+    color: #F2F6FF;
+  }
+
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-track { background: #020617; }
+  ::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #16304f, #0d1d33);
+    border-radius: 8px;
+    border: 2px solid #020617;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: #1f4068; }
+
+  :focus-visible {
+    outline: 2px solid rgba(122,167,255,0.55);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
