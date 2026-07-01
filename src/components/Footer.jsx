@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { DiscordIcon, XIcon } from './icons'
 
 const SOCIAL = [
-  { label: 'Discord', href: 'https://discord.gg/elixiralpha', Icon: DiscordIcon },
+  { label: 'Discord', href: 'https://discord.gg/b8VFpgbg5U', Icon: DiscordIcon },
   { label: 'X', href: 'https://x.com/elixiralpha_', Icon: XIcon },
   { label: 'Termos', href: '#' },
 ]

@@ -2,7 +2,7 @@ import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion'
 import { DiscordIcon } from './icons'
 
 const ease = [0.22, 1, 0.36, 1]
-const DISCORD_INVITE = 'https://discord.gg/elixiralpha'
+const DISCORD_INVITE = 'https://discord.gg/b8VFpgbg5U'
 
 export default function Hero() {
   // ── MOUSE TRACKING ──────────────────────────────

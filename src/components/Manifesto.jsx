@@ -1,7 +1,7 @@
 import AnimateIn from './AnimateIn'
 import { DiscordIcon } from './icons'
 
-const DISCORD_INVITE = 'https://discord.gg/elixiralpha'
+const DISCORD_INVITE = 'https://discord.gg/b8VFpgbg5U'
 
 export default function Manifesto() {
   return (
