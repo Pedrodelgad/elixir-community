@@ -127,6 +127,25 @@ export default function AdminPage() {
     if (res.ok) setUsers(list => list.filter(x => x.id !== id))
   }
 
+  // Dá (comp manual) um plano Alpha a um usuário — usa o endpoint admin-only /api/subscriptions,
+  // que cria a assinatura, aplica o cargo no Discord e manda a DM (mesmo fluxo do pagamento).
+  const grantPlan = async (u, planId) => {
+    if (!planId) return
+    if (!confirm(`Dar o plano "${PLAN_META[planId]?.label || planId}" para @${u.handle}?`)) return
+    const res = await fetch('/api/subscriptions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ userId: u.id, plan: planId }),
+    })
+    const d = await res.json().catch(() => ({}))
+    if (res.ok && d.user) {
+      setUsers(list => list.map(x => x.id === u.id ? { ...x, plan: d.user.plan, planId: d.user.planId, expiresAt: d.user.expiresAt } : x))
+    } else {
+      alert(d.error || 'Não foi possível dar o plano')
+    }
+  }
+
   const deleteComment = async (id) => {
     const res = await fetch(`/api/comments/${id}`, { method: 'DELETE', credentials: 'include' })
     if (res.ok) setComments(list => list.filter(x => x.id !== id))
@@ -336,17 +355,28 @@ export default function AdminPage() {
                       </td>
                       <td className="py-3 pr-4 text-[12px] whitespace-nowrap" style={{ color: 'rgba(170,176,188,0.5)', fontFamily: "'Inter', sans-serif" }}>{fmtDate(u.createdAt)}</td>
                       <td className="py-3 text-right">
-                        {u.role !== 'admin' && (
-                        <button
-                          onClick={() => deleteUser(u.id)}
-                          className="text-[11px] font-medium px-3 py-1.5 rounded-lg transition-all"
-                          style={{ color: 'rgba(255,130,130,0.7)', background: 'rgba(220,60,60,0.06)', border: '1px solid rgba(220,80,80,0.15)', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
-                          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(220,60,60,0.14)'; e.currentTarget.style.color = 'rgba(255,140,140,0.95)' }}
-                          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(220,60,60,0.06)'; e.currentTarget.style.color = 'rgba(255,130,130,0.7)' }}
-                        >
-                          Apagar
-                        </button>
-                        )}
+                        <div className="flex items-center justify-end gap-2">
+                          {/* Dar plano Alpha (comp manual) */}
+                          <select value="" onChange={e => grantPlan(u, e.target.value)} title="Dar plano Alpha a este usuário"
+                            className="text-[11px] rounded-lg px-2 py-1.5 outline-none"
+                            style={{ background: 'rgba(58,100,220,0.12)', border: '1px solid rgba(100,150,255,0.24)', color: 'rgba(170,200,255,0.95)', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+                            <option value="" style={{ color: '#111' }}>+ Dar plano</option>
+                            {Object.entries(PLAN_META).filter(([id]) => id !== 'free').map(([id, m]) => (
+                              <option key={id} value={id} style={{ color: '#111' }}>{m.label}</option>
+                            ))}
+                          </select>
+                          {u.role !== 'admin' && (
+                          <button
+                            onClick={() => deleteUser(u.id)}
+                            className="text-[11px] font-medium px-3 py-1.5 rounded-lg transition-all"
+                            style={{ color: 'rgba(255,130,130,0.7)', background: 'rgba(220,60,60,0.06)', border: '1px solid rgba(220,80,80,0.15)', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(220,60,60,0.14)'; e.currentTarget.style.color = 'rgba(255,140,140,0.95)' }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(220,60,60,0.06)'; e.currentTarget.style.color = 'rgba(255,130,130,0.7)' }}
+                          >
+                            Apagar
+                          </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
