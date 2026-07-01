@@ -1292,7 +1292,7 @@ startGateway(prisma, addAlphaRole, sendDM)
 import { existsSync } from 'fs'
 if (IS_PROD && existsSync(DIST)) {
   app.use(express.static(DIST))
-  app.get('*', (req, res) => res.sendFile(path.join(DIST, 'index.html')))
+  app.get(/.*/, (req, res) => res.sendFile(path.join(DIST, 'index.html'))) // Express 5: catch-all do SPA (o '*' antigo quebra)
 }
 
 /* ─── Handler de erro global ─── */
