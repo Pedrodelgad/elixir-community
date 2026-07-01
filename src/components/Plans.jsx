@@ -123,7 +123,7 @@ function DiscordIcon() {
 }
 
 const PENDING_PLAN_KEY = 'elixir_pending_plan'
-const DISCORD_INVITE = 'https://discord.gg/hnRXNfEwp' // servidor da comunidade (plano gratuito)
+const DISCORD_INVITE = 'https://discord.gg/b8VFpgbg5U' // servidor da comunidade (plano gratuito)
 
 // Detecta carteiras Solana instaladas. Todas (Phantom, Solflare, Backpack, Glow…)
 // expõem a mesma API connect()/signAndSendTransaction(), então o fluxo é o mesmo.
