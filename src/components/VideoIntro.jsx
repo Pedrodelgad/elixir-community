@@ -109,14 +109,17 @@ export default function VideoIntro({ onDone }) {
         }}
       />
 
-      {/* ── Overlay de tint azul Elixir — sutil, dá coesão ao brand ── */}
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background: 'rgba(6,26,43,0.12)',
-          mixBlendMode: 'multiply',
-        }}
-      />
+      {/* ── Overlay de tint azul Elixir — sutil, dá coesão ao brand.
+           mix-blend-mode sobre vídeo é caro no GPU do celular → só no desktop. ── */}
+      {!isMobile && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: 'rgba(6,26,43,0.12)',
+            mixBlendMode: 'multiply',
+          }}
+        />
+      )}
 
       {/* ── Barras letterbox cinemáticas ── */}
       <div className="absolute top-0 left-0 right-0 pointer-events-none"

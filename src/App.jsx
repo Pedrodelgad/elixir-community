@@ -17,6 +17,10 @@ import AmbientBeams from './components/AmbientBeams'
 // Preload imediato — começa a baixar o GLB + HDR enquanto o vídeo toca
 useGLTF.preload('/imgs/logo3d.glb')
 
+// Mobile/celular: pointer grosso ou tela estreita
+const isMobile = typeof window !== 'undefined' &&
+  (window.matchMedia?.('(pointer: coarse)').matches || window.innerWidth < 768)
+
 export default function App() {
   // Se já viu o intro nessa sessão, vai direto para o site
   const already = sessionStorage.getItem('elixir_intro_done') === '1'
@@ -30,10 +34,12 @@ export default function App() {
         <VideoIntro onDone={() => setPhase('logo')} />
       )}
 
-      {/* 2. Logo gate — montado JÁ durante o vídeo (atrás dele: Intro é z-100, VideoIntro z-200),
-           pra pré-aquecer o Canvas 3D + Environment durante os ~4s do vídeo. Assim a logo já está
-           renderizada quando o vídeo sai — sem delay. A Intro se remove sozinha após o reveal. */}
-      {!already && (
+      {/* 2. Logo gate.
+           DESKTOP: montado JÁ durante o vídeo (atrás dele: Intro z-100, VideoIntro z-200) pra
+           pré-aquecer o Canvas 3D + Environment — logo já pronta quando o vídeo sai, sem delay.
+           MOBILE: montar durante o vídeo trava o celular (WebGL + HDR + render competindo com a
+           decodificação do vídeo). Então no mobile a logo só monta DEPOIS do vídeo (phase !== 'video'). */}
+      {!already && (!isMobile || phase !== 'video') && (
         <Intro onDone={() => { sessionStorage.setItem('elixir_intro_done', '1'); setPhase('site') }} />
       )}
 
