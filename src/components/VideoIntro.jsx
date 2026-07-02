@@ -27,6 +27,16 @@ export default function VideoIntro({ onDone }) {
     const video = videoRef.current
     if (!video) return
 
+    // Autoplay no mobile: o React não seta a PROPRIEDADE muted de forma confiável (só o atributo),
+    // e iOS/Android bloqueiam autoplay se o vídeo não estiver mudo no nível da propriedade → aparece
+    // o botão de play. Garantimos mudo aqui e disparamos o play() manualmente.
+    video.muted = true
+    video.defaultMuted = true
+    const playPromise = video.play?.()
+    if (playPromise?.catch) {
+      playPromise.catch(() => triggerFade())  // autoplay negado → não trava com botão de play, pula pra logo
+    }
+
     const onTime   = () => { if (video.currentTime >= FADE_AT) triggerFade() }
     const fallback = setTimeout(triggerFade, (FADE_AT + 1.5) * 1000)
 
