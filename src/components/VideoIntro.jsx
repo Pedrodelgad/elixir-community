@@ -4,6 +4,10 @@ import { motion } from 'framer-motion'
 const FADE_AT = 3.5   // começa fade aos 3.5s (vídeo tem 4.04s)
 const FADE_MS = 700   // duração do fade out
 
+// Mobile/celular: pointer grosso ou tela estreita → render mais leve
+const isMobile = typeof window !== 'undefined' &&
+  (window.matchMedia?.('(pointer: coarse)').matches || window.innerWidth < 768)
+
 export default function VideoIntro({ onDone }) {
   const [phase, setPhase] = useState('playing') // playing → fading → done
   const videoRef = useRef(null)
@@ -28,9 +32,11 @@ export default function VideoIntro({ onDone }) {
 
     video.addEventListener('timeupdate', onTime)
     video.addEventListener('ended', triggerFade)
+    video.addEventListener('error', triggerFade)  // codec não suportado (ex.: HEVC no Android) → não trava, pula pra logo na hora
     return () => {
       video.removeEventListener('timeupdate', onTime)
       video.removeEventListener('ended', triggerFade)
+      video.removeEventListener('error', triggerFade)
       clearTimeout(fallback)
     }
   }, [])
@@ -68,22 +74,31 @@ export default function VideoIntro({ onDone }) {
         </defs>
       </svg>
 
-      {/* ── Vídeo com sharpen + color grade ── */}
+      {/* ── Vídeo com sharpen + color grade ──
+          Fontes: mp4 (H.264/avc1) primeiro — universal e leve (~400KB), toca em qualquer
+          Android/iOS. O .mov é HEVC (hvc1): não decodifica na maioria dos Androids → só fica
+          como fallback. No mobile trocamos o filtro SVG pesado (feConvolveMatrix roda por
+          pixel/frame, trava o celular) por um filtro CSS barato acelerado por GPU. */}
       <video
         ref={videoRef}
-        src="/imgs/intro.mov"
         autoPlay
         muted
         playsInline
+        preload="auto"
         style={{
           width: '100%',
           height: '100%',
           objectFit: 'cover',
-          filter: 'url(#vid-enhance) brightness(1.04)',
+          filter: isMobile
+            ? 'contrast(1.06) saturate(1.08) brightness(1.04)'
+            : 'url(#vid-enhance) brightness(1.04)',
           willChange: 'transform',
           transform: 'translateZ(0)',
         }}
-      />
+      >
+        <source src="/imgs/intro.mp4" type="video/mp4" />
+        <source src="/imgs/intro.mov" type="video/quicktime" />
+      </video>
 
       {/* ── Vinheta cinemática ── */}
       <div

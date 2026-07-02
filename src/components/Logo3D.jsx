@@ -97,6 +97,10 @@ function Model({ mousePos, phaseRef }) {
   return <primitive ref={modelRef} object={scene} scale={0.62} />
 }
 
+// Mobile/celular: menos pixels + sem antialias = init e render bem mais leves
+const isMobile = typeof window !== 'undefined' &&
+  (window.matchMedia?.('(pointer: coarse)').matches || window.innerWidth < 768)
+
 // ── Canvas ────────────────────────────────────────────────────────
 export default function Logo3D({ mousePos, phaseRef, size = 280 }) {
   return (
@@ -116,10 +120,11 @@ export default function Logo3D({ mousePos, phaseRef, size = 280 }) {
       {/* Canvas transparente — sem fundo visível */}
       <Canvas
         style={{ position: 'relative', width: '100%', height: '100%', zIndex: 1 }}
+        dpr={isMobile ? [1, 1] : [1, 1.5]}
         camera={{ position: [0, 0, 9.5], fov: 32 }}
         gl={{
           alpha: true,
-          antialias: true,
+          antialias: !isMobile,
           premultipliedAlpha: false,
           powerPreference: 'high-performance',
         }}
