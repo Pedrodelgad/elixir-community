@@ -212,19 +212,19 @@ export default function Intro({ onDone }) {
         transition={{ duration: 0.25 }}
       >
         <motion.p
-          className="text-[10px] font-semibold tracking-[4px] uppercase"
-          style={{ color: 'rgba(140,170,210,0.42)' }}
-          animate={{ opacity: [0.3, 0.65, 0.3] }}
-          transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+          className="text-[11px] font-bold tracking-[4px] uppercase"
+          style={{ color: 'rgba(176,202,242,0.95)', textShadow: '0 0 14px rgba(58,123,213,0.5)' }}
+          animate={{ opacity: [0.7, 1, 0.7] }}
+          transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
         >
           segure para entrar
         </motion.p>
         <div className="flex gap-1.5">
           {[0, 1, 2].map(i => (
             <motion.div key={i} className="rounded-full"
-              style={{ width: 3, height: 3, background: 'rgba(122,167,255,0.4)' }}
-              animate={{ opacity: [0.15, 0.85, 0.15] }}
-              transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.2, ease: 'easeInOut' }}
+              style={{ width: 4, height: 4, background: 'rgba(150,185,255,0.8)' }}
+              animate={{ opacity: [0.35, 1, 0.35] }}
+              transition={{ duration: 1.4, repeat: Infinity, delay: i * 0.2, ease: 'easeInOut' }}
             />
           ))}
         </div>
