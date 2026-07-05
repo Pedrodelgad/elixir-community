@@ -7,6 +7,7 @@ import PlansPage from './pages/PlansPage.jsx'
 import AdminPage from './pages/AdminPage.jsx'
 import AffiliatePage from './pages/AffiliatePage.jsx'
 import AreaDoAlunoPage from './pages/AreaDoAlunoPage.jsx'
+import VincularDiscordPage from './pages/VincularDiscordPage.jsx'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -20,6 +21,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/videos" element={<Navigate to="/area-do-aluno" replace />} />
           <Route path="/area-do-aluno" element={<AreaDoAlunoPage />} />
           <Route path="/afiliado" element={<AffiliatePage />} />
+          <Route path="/vincular-discord" element={<VincularDiscordPage />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

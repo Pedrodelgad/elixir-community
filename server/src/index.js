@@ -307,6 +307,9 @@ app.get('/api/auth/me', auth, (req, res) => {
 // O frontend (porta 5173) troca esse código por um cookie via proxy Vite,
 // garantindo que o cookie seja definido na origem correta.
 const authCodes = new Map() // code → { userId, expires }
+// Discord autorizado mas ainda sem conta definida (e-mail ≠ cadastro) → aguarda a escolha
+// "entrar pra vincular" ou "criar nova" na tela /vincular-discord.
+const pendingDiscordLinks = new Map() // code → { discord, accessToken, expires }
 
 /* ─── Discord OAuth ─── */
 
@@ -379,18 +382,16 @@ app.get('/api/auth/discord/callback', async (req, res) => {
         const byEmail = await prisma.user.findUnique({ where: { email: dUser.email }, include: { subscription: true } })
         user = await prisma.user.update({ where: { id: byEmail.id }, data: { discordId: dUser.id, discordToken: tokens.access_token }, include: { subscription: true } })
       } else {
-        const handle = await uniqueHandle(dUser.username || dUser.global_name || 'user')
-        user = await prisma.user.create({
-          data: {
-            name: dUser.global_name || dUser.username,
-            handle,
-            email: dUser.email || `discord_${dUser.id}@elixir.local`,
-            password: null,
-            discordId: dUser.id,
-            discordToken: tokens.access_token,
-          },
-          include: { subscription: true },
+        // Discord NOVO e sem e-mail correspondente → NÃO cria conta às cegas (isso duplicava a conta
+        // de quem já tinha cadastro com outro e-mail). Segura o Discord e manda pra tela de escolha.
+        const p = crypto.randomBytes(24).toString('hex')
+        pendingDiscordLinks.set(p, {
+          discord: { id: dUser.id, username: dUser.username, global_name: dUser.global_name, email: dUser.email || null },
+          accessToken: tokens.access_token,
+          expires: Date.now() + 15 * 60_000,
         })
+        const origin = IS_PROD ? '' : (process.env.CORS_ORIGIN || 'http://localhost:5173')
+        return res.redirect(`${origin}/vincular-discord?p=${p}`)
       }
     }
 
@@ -444,6 +445,65 @@ app.post('/api/auth/redeem', async (req, res) => {
   authCodes.delete(code)
   const user = await prisma.user.findUnique({ where: { id: entry.userId }, include: { subscription: true } })
   if (!user) return res.status(400).json({ error: 'Usuário não encontrado' })
+  setToken(res, user.id)
+  res.json({ user: toClient(user) })
+})
+
+// Finaliza um Discord pendente (tela /vincular-discord): entra numa conta existente e vincula,
+// OU cria conta nova. É aqui que a associação acontece mesmo com e-mail diferente do cadastro.
+app.post('/api/auth/discord/link', authLimiter, async (req, res) => {
+  const { code, mode, email, password } = req.body
+  const entry = code && pendingDiscordLinks.get(code)
+  if (!entry || entry.expires < Date.now()) {
+    pendingDiscordLinks.delete(code)
+    return res.status(400).json({ error: 'Sessão de vínculo expirada — conecte o Discord de novo' })
+  }
+  const d = entry.discord
+
+  let user
+  if (mode === 'new') {
+    // Cria conta nova já com o Discord vinculado
+    const handle = await uniqueHandle(d.username || d.global_name || 'user')
+    user = await prisma.user.create({
+      data: {
+        name: d.global_name || d.username,
+        handle,
+        email: d.email || `discord_${d.id}@elixir.local`,
+        password: null,
+        discordId: d.id,
+        discordToken: entry.accessToken,
+      },
+      include: { subscription: true },
+    })
+  } else {
+    // Entrar numa conta existente (e-mail + senha) e vincular o Discord nela — ignora o e-mail do Discord
+    const acc = await prisma.user.findUnique({ where: { email: (email || '').trim().toLowerCase() }, include: { subscription: true } })
+    const ok = await bcrypt.compare(password || '', acc?.password || DUMMY_HASH)
+    if (!acc || !acc.password || !ok) return res.status(401).json({ error: 'Email ou senha incorretos' })
+    if (acc.twoFactorEnabled) return res.status(400).json({ error: 'Sua conta tem 2FA — entre normalmente no site e use "Conectar Discord".' })
+    // Se este Discord já está em outra conta (duplicata), migra o vínculo pra cá (campo é @unique)
+    const existing = await prisma.user.findUnique({ where: { discordId: d.id } })
+    if (existing && existing.id !== acc.id) {
+      await prisma.user.update({ where: { id: existing.id }, data: { discordId: null, discordToken: null } })
+    }
+    user = await prisma.user.update({ where: { id: acc.id }, data: { discordId: d.id, discordToken: entry.accessToken }, include: { subscription: true } })
+  }
+  pendingDiscordLinks.delete(code)
+
+  // Alpha ativo → entra no servidor + aplica o cargo + DM
+  const sub = user.subscription
+  if (sub && new Date(sub.expiresAt) > new Date()) {
+    await addToGuild(user.discordId, entry.accessToken).catch(e => console.error(`[Discord] addToGuild(link): ${e.message}`))
+    await addAlphaRole(user.discordId)
+      .then(() => console.log(`[Discord] ✓ Cargo pós-vínculo (link) a ${user.discordId}`))
+      .catch(e => console.error(`[Discord] ✗ Cargo (link): ${e.message}`))
+    const INVITE = process.env.DISCORD_INVITE_URL
+    await sendDM(user.discordId,
+      `⚡ **Plano Alpha liberado!**\n\nSeu cargo **Alpha** foi aplicado.` +
+      (INVITE ? `\nEntre no servidor: ${INVITE}` : '') + `\n\nBoas trades! 🚀`
+    ).catch(() => {})
+  }
+
   setToken(res, user.id)
   res.json({ user: toClient(user) })
 })
