@@ -693,6 +693,13 @@ async function activateAlpha({ userId, planId, expiresAt, priceSol = 0, priceBrl
     console.log('[Alpha] ⚠ Sem discordId — cargo e DM pulados')
     return
   }
+  // Garante que a pessoa está NO servidor antes do cargo (senão dá "Unknown Member").
+  // Usa o token OAuth guardado no vínculo (scope guilds.join). Se já está no servidor, é no-op.
+  if (user.discordToken) {
+    await addToGuild(user.discordId, user.discordToken)
+      .then(() => console.log(`[Alpha] ✓ Garantido no servidor: ${user.discordId}`))
+      .catch(e => console.error(`[Alpha] addToGuild: ${e.message}`))
+  }
   await addAlphaRole(user.discordId)
     .then(() => console.log(`[Alpha] ✓ Cargo dado a ${user.discordId}`))
     .catch(e => console.error(`[Alpha] ✗ Cargo erro: ${e.message}`))
