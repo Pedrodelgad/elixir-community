@@ -146,6 +146,18 @@ export default function AdminPage() {
     }
   }
 
+  // Remove o Alpha de um usuário — apaga a assinatura e tira o cargo no Discord.
+  const removeAlpha = async (u) => {
+    if (!confirm(`Remover o Alpha de @${u.handle}? Isso também tira o cargo no Discord.`)) return
+    const res = await fetch(`/api/subscriptions/${u.id}`, { method: 'DELETE', credentials: 'include' })
+    const d = await res.json().catch(() => ({}))
+    if (res.ok && d.user) {
+      setUsers(list => list.map(x => x.id === u.id ? { ...x, plan: d.user.plan, planId: d.user.planId, expiresAt: d.user.expiresAt } : x))
+    } else {
+      alert(d.error || 'Não foi possível remover o Alpha')
+    }
+  }
+
   const deleteComment = async (id) => {
     const res = await fetch(`/api/comments/${id}`, { method: 'DELETE', credentials: 'include' })
     if (res.ok) setComments(list => list.filter(x => x.id !== id))
@@ -365,6 +377,19 @@ export default function AdminPage() {
                               <option key={id} value={id} style={{ color: '#111' }}>{m.label}</option>
                             ))}
                           </select>
+                          {/* Remover Alpha — só aparece pra quem tem plano ativo */}
+                          {u.planId && (
+                            <button
+                              onClick={() => removeAlpha(u)}
+                              title="Remover o Alpha e o cargo no Discord"
+                              className="text-[11px] font-medium px-3 py-1.5 rounded-lg transition-all whitespace-nowrap"
+                              style={{ color: 'rgba(255,180,120,0.8)', background: 'rgba(220,140,40,0.08)', border: '1px solid rgba(230,150,50,0.2)', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+                              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(220,140,40,0.16)'; e.currentTarget.style.color = 'rgba(255,190,130,0.95)' }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(220,140,40,0.08)'; e.currentTarget.style.color = 'rgba(255,180,120,0.8)' }}
+                            >
+                              Remover Alpha
+                            </button>
+                          )}
                           {u.role !== 'admin' && (
                           <button
                             onClick={() => deleteUser(u.id)}

@@ -324,7 +324,17 @@ async function uniqueHandle(base) {
 // Redireciona para o Discord para o usuário autorizar
 // ?redirect=/planos para voltar para uma página específica após o OAuth
 app.get('/api/auth/discord', (req, res) => {
-  res.redirect(getOAuthUrl(req.query.redirect || '/'))
+  const redirect = typeof req.query.redirect === 'string' ? req.query.redirect : '/'
+  // Captura o usuário logado AQUI (requisição same-origin, cookie presente) e o carrega ASSINADO no state.
+  // Assim o callback vincula o Discord na conta certa mesmo que o cookie Lax não sobreviva ao redirect do
+  // Discord — que é o que criava conta duplicada quando o e-mail do Discord ≠ e-mail do cadastro.
+  let linkUserId = null
+  try {
+    const tok = req.cookies[COOKIE]
+    if (tok) { const dec = jwt.verify(tok, JWT_SECRET); if (!dec.twoFactorPending) linkUserId = dec.userId }
+  } catch { /* sem sessão válida — segue como login/cadastro via Discord */ }
+  const state = jwt.sign({ r: redirect, link: linkUserId }, JWT_SECRET, { expiresIn: '10m' })
+  res.redirect(getOAuthUrl(state))
 })
 
 // Callback após autorização no Discord
@@ -336,38 +346,52 @@ app.get('/api/auth/discord/callback', async (req, res) => {
     const tokens = await exchangeCode(code)
     const dUser  = await getDiscordUser(tokens.access_token)
 
-    // Há sessão logada? (pra vincular o Discord à conta CERTA — ex: quem pagou e clicou "Conectar Discord")
-    let sessionUserId = null
+    // Decodifica o state ASSINADO: redirect interno + (se logado no início) o userId a vincular.
+    let redirect = '/', linkUserId = null
     try {
-      const tok = req.cookies[COOKIE]
-      if (tok) { const dec = jwt.verify(tok, JWT_SECRET); if (!dec.twoFactorPending) sessionUserId = dec.userId }
-    } catch { /* sessão inválida — segue como login novo */ }
+      const st = jwt.verify(req.query.state, JWT_SECRET)
+      if (typeof st.r === 'string' && /^\/[^/\\]/.test(st.r)) redirect = st.r  // anti open-redirect
+      if (st.link) linkUserId = st.link
+    } catch { /* state ausente/antigo → login/cadastro normal */ }
+    // Fallback: se o state não trouxe o vínculo, tenta o cookie da sessão (same-origin)
+    if (!linkUserId) {
+      try {
+        const tok = req.cookies[COOKIE]
+        if (tok) { const dec = jwt.verify(tok, JWT_SECRET); if (!dec.twoFactorPending) linkUserId = dec.userId }
+      } catch { /* sem sessão */ }
+    }
 
-    // Prioridade: 1) conta que já tem esse Discord  2) conta LOGADA  3) conta com mesmo email  4) cria nova
-    let user = await prisma.user.findUnique({ where: { discordId: dUser.id }, include: { subscription: true } })
-
-    if (user) {
-      user = await prisma.user.update({ where: { id: user.id }, data: { discordToken: tokens.access_token }, include: { subscription: true } })
-    } else if (sessionUserId) {
-      // Logado e Discord ainda não vinculado → vincula NESTA conta (a que pagou)
-      user = await prisma.user.update({ where: { id: sessionUserId }, data: { discordId: dUser.id, discordToken: tokens.access_token }, include: { subscription: true } })
-    } else if (dUser.email && (await prisma.user.findUnique({ where: { email: dUser.email } }))) {
-      const byEmail = await prisma.user.findUnique({ where: { email: dUser.email }, include: { subscription: true } })
-      user = await prisma.user.update({ where: { id: byEmail.id }, data: { discordId: dUser.id, discordToken: tokens.access_token }, include: { subscription: true } })
+    let user
+    if (linkUserId) {
+      // "Conectar Discord" logado → vincula NESTA conta, ignorando o e-mail do Discord (que costuma diferir).
+      // Se este Discord já estiver em OUTRA conta (duplicata antiga), migra o vínculo pra cá (campo é @unique).
+      const existing = await prisma.user.findUnique({ where: { discordId: dUser.id } })
+      if (existing && existing.id !== linkUserId) {
+        await prisma.user.update({ where: { id: existing.id }, data: { discordId: null, discordToken: null } })
+      }
+      user = await prisma.user.update({ where: { id: linkUserId }, data: { discordId: dUser.id, discordToken: tokens.access_token }, include: { subscription: true } })
     } else {
-      // Cria conta nova via Discord
-      const handle = await uniqueHandle(dUser.username || dUser.global_name || 'user')
-      user = await prisma.user.create({
-        data: {
-          name: dUser.global_name || dUser.username,
-          handle,
-          email: dUser.email || `discord_${dUser.id}@elixir.local`,
-          password: null,
-          discordId: dUser.id,
-          discordToken: tokens.access_token,
-        },
-        include: { subscription: true },
-      })
+      // Login/cadastro via Discord (deslogado): 1) conta com esse Discord  2) mesmo e-mail  3) cria nova
+      user = await prisma.user.findUnique({ where: { discordId: dUser.id }, include: { subscription: true } })
+      if (user) {
+        user = await prisma.user.update({ where: { id: user.id }, data: { discordToken: tokens.access_token }, include: { subscription: true } })
+      } else if (dUser.email && (await prisma.user.findUnique({ where: { email: dUser.email } }))) {
+        const byEmail = await prisma.user.findUnique({ where: { email: dUser.email }, include: { subscription: true } })
+        user = await prisma.user.update({ where: { id: byEmail.id }, data: { discordId: dUser.id, discordToken: tokens.access_token }, include: { subscription: true } })
+      } else {
+        const handle = await uniqueHandle(dUser.username || dUser.global_name || 'user')
+        user = await prisma.user.create({
+          data: {
+            name: dUser.global_name || dUser.username,
+            handle,
+            email: dUser.email || `discord_${dUser.id}@elixir.local`,
+            password: null,
+            discordId: dUser.id,
+            discordToken: tokens.access_token,
+          },
+          include: { subscription: true },
+        })
+      }
     }
 
     // Vinculação pós-pagamento: se já tem assinatura Alpha ativa, entra no servidor + aplica o cargo + DM.
@@ -387,10 +411,6 @@ app.get('/api/auth/discord/callback', async (req, res) => {
         `\n\nBoas trades! 🚀`
       ).catch(() => {})
     }
-
-    // Só aceita caminho interno: começa com "/" mas NÃO com "//" nem "/\" (anti open-redirect)
-    const state = req.query.state
-    const redirect = (typeof state === 'string' && /^\/[^/\\]/.test(state)) ? state : '/'
 
     if (IS_PROD) {
       // Em prod: mesma origem, cookie direto
@@ -640,6 +660,21 @@ app.post('/api/subscriptions', auth, adminOnly, async (req, res) => {
   await activateAlpha({ userId, planId: plan.id, expiresAt, priceSol: plan.priceSol || 0 })
   const user = await prisma.user.findUnique({ where: { id: userId }, include: { subscription: true } })
   res.json({ user: toClient(user) })
+})
+
+// Remove o Alpha de um usuário (somente admin) — apaga a assinatura e tira o cargo no Discord.
+app.delete('/api/subscriptions/:userId', auth, adminOnly, async (req, res) => {
+  const userId = Number(req.params.userId)
+  if (!userId) return res.status(400).json({ error: 'userId inválido' })
+  const user = await prisma.user.findUnique({ where: { id: userId } })
+  if (!user) return res.status(404).json({ error: 'Usuário não encontrado' })
+  if (user.discordId) {
+    await removeAlphaRole(user.discordId).catch(e => console.error(`[Alpha] remover cargo (admin): ${e.message}`))
+  }
+  await prisma.subscription.deleteMany({ where: { userId } })
+  console.log(`[Alpha] removido (admin) user=${user.name}`)
+  const updated = await prisma.user.findUnique({ where: { id: userId }, include: { subscription: true } })
+  res.json({ user: toClient(updated) })
 })
 
 // Cria a sessão de checkout na Stripe.
