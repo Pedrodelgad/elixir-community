@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import LoginModal from '../components/LoginModal'
@@ -9,6 +9,15 @@ function fmtMoney(cents, currency = 'BRL') {
   } catch {
     return `R$ ${((cents || 0) / 100).toFixed(2)}`
   }
+}
+
+const btnStyle = { background: 'linear-gradient(135deg, #7c3aed, #a78bfa)', boxShadow: '0 4px 18px rgba(124,58,237,0.35)', border: 'none', cursor: 'pointer' }
+const inputStyle = { background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.25)', color: '#EEEAFF', fontFamily: "'Inter', sans-serif", outline: 'none' }
+const PAYOUT_STATUS = {
+  requested:  { label: 'Solicitado',       color: '#c4b5fd', bg: 'rgba(139,92,246,0.14)' },
+  processing: { label: 'Em processamento',  color: '#fcd34d', bg: 'rgba(251,191,36,0.14)' },
+  paid:       { label: 'Pago',              color: '#6ee7b7', bg: 'rgba(52,211,153,0.14)' },
+  failed:     { label: 'Falhou',            color: '#fca5a5', bg: 'rgba(248,113,113,0.14)' },
 }
 
 /* ─── GRÁFICO DE GANHOS (SVG puro, área roxa) ─── */
@@ -73,6 +82,129 @@ const cardStyle = {
   boxShadow: '0 8px 32px rgba(20,10,60,0.4), inset 0 1px 0 rgba(160,140,255,0.08)',
 }
 
+/* ─── Solicitar saque (PIX): chave PIX → código por e-mail → confirma. Sem admin no meio. ─── */
+function WithdrawFlow({ stats, currency, onDone }) {
+  const available = stats?.totals?.available || 0
+  const min = stats?.minPayout || 5000
+  const openPayout = stats?.payouts?.find(p => p.status === 'requested' || p.status === 'processing')
+
+  const [step, setStep] = useState('idle') // idle | form | code
+  const [pixKey, setPixKey] = useState(stats?.payoutDest || '')
+  const [code, setCode] = useState('')
+  const [sentTo, setSentTo] = useState('')
+  const [err, setErr] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  const reset = () => { setStep('idle'); setCode(''); setErr(null) }
+
+  const request = async () => {
+    setBusy(true); setErr(null)
+    try {
+      const r = await fetch('/api/affiliate/payout/request', {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pixKey }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Erro')
+      setSentTo(d.sentTo || ''); setStep('code')
+    } catch (e) { setErr(e.message) } finally { setBusy(false) }
+  }
+  const confirm = async () => {
+    setBusy(true); setErr(null)
+    try {
+      const r = await fetch('/api/affiliate/payout/confirm', {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Erro')
+      reset(); onDone?.()
+    } catch (e) { setErr(e.message) } finally { setBusy(false) }
+  }
+
+  if (openPayout) {
+    return (
+      <p className="text-[13px]" style={{ color: 'rgba(200,190,235,0.65)', fontFamily: "'Inter', sans-serif" }}>
+        Você tem um saque de <b style={{ color: '#EEEAFF' }}>{fmtMoney(openPayout.amountBrl, currency)}</b> em andamento. Assim que ele cair, você poderá solicitar outro.
+      </p>
+    )
+  }
+  if (available < min) {
+    return (
+      <p className="text-[13px]" style={{ color: 'rgba(200,190,235,0.6)', fontFamily: "'Inter', sans-serif" }}>
+        Saque mínimo de <b style={{ color: '#EEEAFF' }}>{fmtMoney(min, currency)}</b>. Faltam <b style={{ color: '#EEEAFF' }}>{fmtMoney(min - available, currency)}</b> para você poder sacar.
+      </p>
+    )
+  }
+
+  if (step === 'idle') {
+    return (
+      <button onClick={() => setStep('form')} className="px-6 py-3 rounded-xl text-[13px] font-semibold text-white transition-all hover:-translate-y-px" style={btnStyle}>
+        Sacar {fmtMoney(available, currency)} via PIX
+      </button>
+    )
+  }
+
+  if (step === 'code') {
+    return (
+      <div className="flex flex-col gap-3 max-w-[380px]">
+        <p className="text-[13px]" style={{ color: 'rgba(220,210,245,0.8)', fontFamily: "'Inter', sans-serif" }}>
+          Enviamos um código para <b style={{ color: '#EEEAFF' }}>{sentTo}</b>. Digite-o para liberar o saque.
+        </p>
+        <input value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} onKeyDown={e => e.key === 'Enter' && code.length === 6 && confirm()}
+          inputMode="numeric" placeholder="000000" autoFocus className="px-4 py-3 rounded-xl text-[20px] tracking-[8px] text-center" style={inputStyle} />
+        {err && <p className="text-[12px]" style={{ color: 'rgba(255,150,150,0.9)', fontFamily: "'Inter', sans-serif" }}>{err}</p>}
+        <div className="flex gap-2">
+          <button onClick={confirm} disabled={busy || code.length !== 6} className="flex-1 px-5 py-3 rounded-xl text-[13px] font-semibold text-white disabled:opacity-50" style={btnStyle}>{busy ? 'Confirmando...' : 'Confirmar saque'}</button>
+          <button onClick={reset} className="px-4 py-3 rounded-xl text-[12px]" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(200,190,235,0.6)', cursor: 'pointer' }}>Cancelar</button>
+        </div>
+      </div>
+    )
+  }
+
+  // step === 'form'
+  return (
+    <div className="flex flex-col gap-3 max-w-[420px]">
+      <p className="text-[13px]" style={{ color: 'rgba(220,210,245,0.8)', fontFamily: "'Inter', sans-serif" }}>
+        Sacando <b style={{ color: '#EEEAFF' }}>{fmtMoney(available, currency)}</b> (todo o saldo disponível) via <b style={{ color: '#EEEAFF' }}>PIX</b>.
+      </p>
+      <input value={pixKey} onChange={e => setPixKey(e.target.value)} onKeyDown={e => e.key === 'Enter' && pixKey && request()}
+        placeholder="Sua chave PIX (CPF, e-mail, telefone ou aleatória)" autoFocus className="px-4 py-3 rounded-xl text-[13px]" style={inputStyle} />
+      {err && <p className="text-[12px]" style={{ color: 'rgba(255,150,150,0.9)', fontFamily: "'Inter', sans-serif" }}>{err}</p>}
+      <div className="flex gap-2">
+        <button onClick={request} disabled={busy || !pixKey} className="flex-1 px-5 py-3 rounded-xl text-[13px] font-semibold text-white disabled:opacity-50" style={btnStyle}>{busy ? 'Enviando...' : 'Enviar código'}</button>
+        <button onClick={reset} className="px-4 py-3 rounded-xl text-[12px]" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(200,190,235,0.6)', cursor: 'pointer' }}>Cancelar</button>
+      </div>
+    </div>
+  )
+}
+
+/* ─── Histórico de saques ─── */
+function PayoutHistory({ payouts, currency }) {
+  if (!payouts?.length) return null
+  return (
+    <div className="rounded-2xl p-6" style={cardStyle}>
+      <p className="text-[14px] font-bold mb-4" style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#EEEAFF' }}>Meus saques</p>
+      <div className="flex flex-col gap-2">
+        {payouts.map(p => {
+          const st = PAYOUT_STATUS[p.status] || PAYOUT_STATUS.requested
+          return (
+            <div key={p.id} className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: 'rgba(139,92,246,0.05)', border: '1px solid rgba(139,92,246,0.14)' }}>
+              <div className="flex flex-col">
+                <span className="text-[14px] font-semibold" style={{ color: '#EEEAFF', fontFamily: "'Space Grotesk', sans-serif" }}>{fmtMoney(p.amountBrl, currency)}</span>
+                <span className="text-[11px]" style={{ color: 'rgba(190,180,235,0.45)', fontFamily: "'Inter', sans-serif" }}>
+                  {new Date(p.createdAt).toLocaleDateString('pt-BR')} · {p.method === 'pix' ? 'PIX' : 'Cripto'}
+                </span>
+              </div>
+              <span className="text-[11px] font-semibold px-3 py-1.5 rounded-full" style={{ color: st.color, background: st.bg, fontFamily: "'Inter', sans-serif" }}>{st.label}</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function AffiliatePage() {
   const { user, loading, joinAffiliate } = useAuth()
   const [loginOpen, setLoginOpen] = useState(false)
@@ -82,13 +214,16 @@ export default function AffiliatePage() {
   const [stats, setStats] = useState(null)
   const [statsError, setStatsError] = useState(null)
 
-  useEffect(() => {
-    if (!user?.isAffiliate) return
+  const loadStats = useCallback(() => {
     fetch('/api/affiliate/stats', { credentials: 'include' })
       .then(r => r.json().then(d => { if (!r.ok) throw new Error(d.error || 'Erro'); return d }))
-      .then(setStats)
+      .then(d => { setStats(d); setStatsError(null) })
       .catch(e => setStatsError(e.message))
-  }, [user?.isAffiliate])
+  }, [])
+
+  useEffect(() => {
+    if (user?.isAffiliate) loadStats()
+  }, [user?.isAffiliate, loadStats])
 
   const handleJoin = async () => {
     setJoining(true); setJoinError(null)
@@ -97,9 +232,10 @@ export default function AffiliatePage() {
     finally { setJoining(false) }
   }
 
+  const link = user?.affiliateLink || stats?.link || ''
   const copyLink = () => {
-    if (!user?.affiliateLink) return
-    navigator.clipboard?.writeText(user.affiliateLink)
+    if (!link) return
+    navigator.clipboard?.writeText(link)
     setCopied(true); setTimeout(() => setCopied(false), 1800)
   }
 
@@ -194,7 +330,7 @@ export default function AffiliatePage() {
               </p>
               <div className="flex flex-col sm:flex-row gap-3">
                 <div className="flex-1 px-4 py-3 rounded-xl text-[13px] truncate" style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)', color: 'rgba(220,210,245,0.85)', fontFamily: "'Inter', sans-serif" }}>
-                  {user.affiliateLink || `?via=${user.affiliateToken}`}
+                  {link}
                 </div>
                 <button onClick={copyLink}
                   className="px-6 py-3 rounded-xl text-[13px] font-semibold text-white whitespace-nowrap transition-all hover:-translate-y-px"
@@ -210,12 +346,12 @@ export default function AffiliatePage() {
               </div>
             )}
 
-            {/* Totais por estado */}
+            {/* Saldo */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[
-                { label: 'Pendente', key: 'pending', hint: 'aguardando liberação', color: '#c5cad4' },
-                { label: 'A receber', key: 'due', hint: 'pronto para pagamento', color: '#d6dbe4' },
-                { label: 'Pago', key: 'paid', hint: 'já recebido', color: '#eef1f6' },
+                { label: 'Disponível', key: 'available', hint: 'pronto para sacar', color: '#eef1f6' },
+                { label: 'Em processamento', key: 'pending', hint: 'saque em andamento', color: '#e6dcff' },
+                { label: 'Já pago', key: 'paid', hint: 'você já recebeu', color: '#d6dbe4' },
               ].map(c => (
                 <div key={c.key} className="rounded-2xl p-5" style={cardStyle}>
                   <p className="text-[10px] font-bold tracking-[2px] uppercase mb-2" style={{ color: 'rgba(196,181,253,0.6)', fontFamily: "'Inter', sans-serif" }}>{c.label}</p>
@@ -227,13 +363,29 @@ export default function AffiliatePage() {
               ))}
             </div>
 
-            {/* Funil: visitas / leads / conversões / taxa */}
+            {/* Saque */}
+            {stats && (
+              <div className="rounded-2xl p-6 flex flex-col gap-4" style={cardStyle}>
+                <div>
+                  <p className="text-[14px] font-bold" style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#EEEAFF' }}>Sacar comissões</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: 'rgba(190,180,235,0.45)', fontFamily: "'Inter', sans-serif" }}>
+                    Saque via PIX com confirmação por código no seu e-mail. Cai direto na sua chave.
+                  </p>
+                </div>
+                <WithdrawFlow stats={stats} currency={currency} onDone={loadStats} />
+              </div>
+            )}
+
+            {/* Histórico de saques */}
+            <PayoutHistory payouts={stats?.payouts} currency={currency} />
+
+            {/* Funil: cliques / cadastros / conversões / comissão */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
-                { label: 'Visitas', value: stats?.visitors ?? 0 },
-                { label: 'Leads', value: stats?.leads ?? 0 },
+                { label: 'Cliques', value: stats?.clicks ?? 0 },
+                { label: 'Cadastros', value: stats?.signups ?? 0 },
                 { label: 'Conversões', value: stats?.conversions ?? 0 },
-                { label: 'Taxa de conversão', value: stats ? `${(stats.conversionRate * 100).toFixed(1)}%` : '0%' },
+                { label: 'Comissão', value: `${Math.round((stats?.rate ?? 0.30) * 100)}%` },
               ].map(c => (
                 <div key={c.label} className="rounded-2xl p-5" style={cardStyle}>
                   <p className="text-[10px] font-bold tracking-[2px] uppercase mb-2" style={{ color: 'rgba(196,181,253,0.6)', fontFamily: "'Inter', sans-serif" }}>{c.label}</p>

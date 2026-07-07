@@ -21,15 +21,30 @@ model User {
   createdAt    DateTime      @default(now())
   discordId    String?       @unique  // ID do Discord do usuário
   discordToken String?                // access token OAuth para adicionar ao servidor
-  // Programa de afiliados (Rewardful)
+  // Programa de afiliados (Rewardful — legado, em remoção)
   affiliateId    String?     @unique  // UUID do afiliado no Rewardful
   affiliateToken String?     @unique  // token do link (?via=token)
   affiliateLink  String?              // URL do link de afiliado (campo url do Rewardful)
+  // Programa de afiliados próprio (substitui o Rewardful)
+  refCode         String?  @unique  // código do link próprio (ex: "pedro7")
+  refClicks       Int      @default(0) // cliques no link de afiliado
+  referredById    Int?              // quem indicou este usuário (last-click)
+  referredBy      User?    @relation("Referrals", fields: [referredById], references: [id])
+  referrals       User[]   @relation("Referrals")
+  commissionRate  Float?            // override da taxa (senão usa a padrão)
+  payoutMethod    String?           // "pix" | "crypto"
+  payoutDest      String?           // chave PIX ou endereço SOL do saque
+  withdrawKeyEnc  String?           // chave de saque criptografada (AES)
+  withdrawKeyHash String?  @unique  // HMAC da chave de saque (unicidade + verificação)
   // 2FA (TOTP — app autenticador)
   twoFactorSecret  String?            // segredo TOTP (base32)
   twoFactorEnabled Boolean  @default(false)
-  subscription Subscription?
-  comments     Comment[]
+  subscription      Subscription?
+  comments          Comment[]
+  payments          Payment[]
+  commissionsEarned Commission[] @relation("AffiliateCommissions")
+  commissionsFrom   Commission[] @relation("ReferredCommissions")
+  payouts           Payout[]
 }
 
 // Catálogo de planos — os produtos vendidos no site
@@ -107,4 +122,62 @@ model Content {
   createdAt   DateTime @default(now())
 
   @@index([categoryId])
+}
+
+// ── Afiliados: ledger próprio (substitui o Rewardful) ──
+
+// Pagamento confirmado — fonte da verdade imutável, âncora da comissão
+model Payment {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId      String
+  amountBrl   Int      @default(0)       // centavos de R$
+  amountSol   Float    @default(0)
+  method      String                     // "card" | "pix" | "sol"
+  provider    String                     // "stripe" | "efi" | "solana"
+  providerRef String   @unique           // id da transação no provider (idempotência)
+  kind        String   @default("first") // "first" | "renewal"
+  createdAt   DateTime @default(now())
+  commission  Commission?
+
+  @@index([userId])
+}
+
+// Comissão do afiliado (ledger). Sem prazo de espera → nasce "approved" (disponível pra saque).
+model Commission {
+  id              Int       @id @default(autoincrement())
+  affiliateUserId Int
+  affiliate       User      @relation("AffiliateCommissions", fields: [affiliateUserId], references: [id], onDelete: Cascade)
+  referredUserId  Int
+  referred        User      @relation("ReferredCommissions", fields: [referredUserId], references: [id], onDelete: Cascade)
+  paymentId       Int       @unique
+  payment         Payment   @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  saleAmountBrl   Int
+  rate            Float
+  amountBrl       Int       // comissão em centavos
+  status          String    @default("approved") // approved (disponível) | pending (num saque em andamento) | paid | reversed | void
+  createdAt       DateTime  @default(now())
+  paidAt          DateTime?
+  payoutId        Int?
+  payout          Payout?   @relation(fields: [payoutId], references: [id])
+
+  @@index([affiliateUserId])
+}
+
+// Saque solicitado pelo afiliado
+model Payout {
+  id              Int          @id @default(autoincrement())
+  affiliateUserId Int
+  affiliate       User         @relation(fields: [affiliateUserId], references: [id], onDelete: Cascade)
+  amountBrl       Int
+  method          String       // "pix" | "crypto"
+  destination     String
+  status          String       @default("requested") // requested | processing | paid | failed
+  externalRef     String?
+  createdAt       DateTime     @default(now())
+  paidAt          DateTime?
+  commissions     Commission[]
+
+  @@index([affiliateUserId])
 }

@@ -48,6 +48,24 @@ export async function sendTwoFactorCode(to, code) {
   return { dev: false }
 }
 
+// Código de confirmação de SAQUE do afiliado (some antes do dinheiro escoar do saldo)
+export async function sendWithdrawCode(to, code, amountBrl = 0) {
+  const valor = `R$ ${((amountBrl || 0) / 100).toFixed(2).replace('.', ',')}`
+  if (!mailConfigured) {
+    console.log(`📧 [DEV — email não configurado] Código de saque (${valor}) para ${to}: ${code}`)
+    return { dev: true }
+  }
+
+  await transporter.sendMail({
+    from: `"Elixir" <${user}>`,
+    to,
+    subject: `${code} é o código do seu saque Elixir`,
+    text: `Você pediu um saque de ${valor}. Confirme com o código: ${code}\n\nEle vale por 15 minutos. Se não foi você, NÃO use o código e troque sua senha imediatamente.`,
+    html: codeEmailHtml({ title: 'Confirmar saque', body: `Você solicitou um saque de <b style="color:#EEF2FF">${valor}</b>.<br/>Use o código abaixo para confirmar. Ele vale por 15 minutos.`, code, footer: 'Se não foi você, NÃO use o código e troque sua senha imediatamente.' }),
+  })
+  return { dev: false }
+}
+
 // Template compartilhado dos emails com código de 6 dígitos
 function codeEmailHtml({ title, body, code, footer }) {
   return `

@@ -1,11 +1,11 @@
-// Pagamento em SOL — monta a transação (split 90/10) e verifica on-chain.
+// Pagamento em SOL — monta a transação (split 85/15) e verifica on-chain.
 // SEM private key: o usuário assina na Phantom; o backend só monta e confere.
 import { Connection, PublicKey, Transaction, TransactionInstruction, SystemProgram, LAMPORTS_PER_SOL } from '@solana/web3.js'
 
 const RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com'
 const RECEIVE = process.env.SOLANA_RECEIVE_WALLET
 const FEE = process.env.SOLANA_FEE_WALLET
-const FEE_BPS = 1000 // 10%
+const FEE_BPS = 1500 // 15%
 const MEMO_PROGRAM = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr')
 
 let receivePk = null, feePk = null
@@ -17,7 +17,7 @@ if (!solanaConfigured) console.warn('⚠ Carteiras Solana não configuradas — 
 
 export const connection = new Connection(RPC, 'confirmed')
 
-// total em lamports, taxa (10%) e o principal (resto). main+fee = total exato.
+// total em lamports, taxa (15%) e o principal (resto). main+fee = total exato.
 export function splitLamports(priceSol) {
   const total = Math.round(priceSol * LAMPORTS_PER_SOL)
   const fee = Math.round((total * FEE_BPS) / 10000)

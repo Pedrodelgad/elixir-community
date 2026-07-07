@@ -10,6 +10,21 @@ import AreaDoAlunoPage from './pages/AreaDoAlunoPage.jsx'
 import VincularDiscordPage from './pages/VincularDiscordPage.jsx'
 import './index.css'
 
+// Afiliados: ?ref=CODE → cookie elx_ref (60d, 1st-party) + conta o clique, e limpa a URL
+;(() => {
+  try {
+    const raw = new URLSearchParams(window.location.search).get('ref')
+    if (!raw) return
+    const code = raw.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 24)
+    if (!code) return
+    document.cookie = `elx_ref=${code}; max-age=${60 * 24 * 3600}; path=/; SameSite=Lax`
+    fetch('/api/ref/hit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ref: code }) }).catch(() => {})
+    const url = new URL(window.location.href)
+    url.searchParams.delete('ref')
+    window.history.replaceState({}, '', url.pathname + url.search + url.hash)
+  } catch { /* captura de ref nunca quebra o app */ }
+})()
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>

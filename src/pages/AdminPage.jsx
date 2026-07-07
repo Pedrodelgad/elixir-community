@@ -6,6 +6,8 @@ import AdminStudentArea from '../components/AdminStudentArea'
 /* ─── Usuários agora vêm do banco via API (/api/admin/users) ─── */
 /* ─── Comentários, vendas e vídeos ainda são mock — próximos passos ─── */
 
+const fmtBrl = (c) => 'R$ ' + ((c || 0) / 100).toFixed(2).replace('.', ',')
+
 // "2026-06-11T…" → "agora" / "5m" / "2h" / "3d"
 function timeAgo(date) {
   const s = (Date.now() - new Date(date).getTime()) / 1000
@@ -110,6 +112,7 @@ export default function AdminPage() {
   const [users, setUsers] = useState([])
   const [comments, setComments] = useState([])
   const [stats, setStats] = useState({ revenueSol: 0, revenueBrl: 0, totalSales: 0, sales: [] })
+  const [affiliates, setAffiliates] = useState([])
 
   // Busca tudo do banco: contas, comentários e estatísticas
   useEffect(() => {
@@ -120,6 +123,8 @@ export default function AdminPage() {
       .then(r => r.json()).then(d => setComments(d.comments || [])).catch(() => {})
     fetch('/api/admin/stats', { credentials: 'include' })
       .then(r => r.json()).then(d => setStats(d)).catch(() => {})
+    fetch('/api/admin/affiliates', { credentials: 'include' })
+      .then(r => r.json()).then(d => setAffiliates(d.affiliates || [])).catch(() => {})
   }, [user])
 
   const deleteUser = async (id) => {
@@ -309,6 +314,57 @@ export default function AdminPage() {
             Conteúdo exclusivo dos membros Alpha — vídeos e ferramentas, organizados por seção.
           </p>
           <AdminStudentArea />
+        </div>
+
+        {/* ── Afiliados (saldos — só leitura) ── */}
+        <div className="rounded-2xl p-6" style={card}>
+          <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+            <div>
+              <h2 className="text-[16px] font-bold" style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#f2f4f8' }}>
+                Afiliados
+              </h2>
+              <p className="text-[11px] mt-0.5" style={{ color: 'rgba(170,176,188,0.5)', fontFamily: "'Inter', sans-serif" }}>
+                Quanto cada afiliado tem. O saque é automático via PIX — você não precisa aprovar nem pagar.
+              </p>
+            </div>
+            <span className="text-[11px] px-3 py-1 rounded-full" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(220,225,235,0.10)', color: 'rgba(200,206,218,0.55)', fontFamily: "'Inter', sans-serif" }}>
+              {affiliates.length} afiliado{affiliates.length === 1 ? '' : 's'}
+            </span>
+          </div>
+
+          {affiliates.length === 0 ? (
+            <p className="text-[13px] py-4" style={{ color: 'rgba(170,176,188,0.45)', fontFamily: "'Inter', sans-serif" }}>Nenhum afiliado ainda.</p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="w-full" style={{ borderCollapse: 'collapse', minWidth: 720 }}>
+                <thead>
+                  <tr>
+                    {['Afiliado', 'Cliques', 'Cadastros', 'Disponível', 'Em proc.', 'Já pago', 'Chave PIX'].map((h, i) => (
+                      <th key={h} className="text-[10px] font-bold tracking-[1.5px] uppercase pb-3 px-3" style={{ color: 'rgba(170,176,188,0.5)', fontFamily: "'Inter', sans-serif", textAlign: i === 0 || i === 6 ? 'left' : 'right', borderBottom: '1px solid rgba(220,225,235,0.08)' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {affiliates.map(a => (
+                    <tr key={a.id} style={{ borderBottom: '1px solid rgba(220,225,235,0.05)' }}>
+                      <td className="py-3 px-3">
+                        <div className="flex flex-col">
+                          <span className="text-[13px] font-semibold" style={{ color: '#eef1f6', fontFamily: "'Inter', sans-serif" }}>@{a.refCode}</span>
+                          <span className="text-[11px]" style={{ color: 'rgba(170,176,188,0.5)', fontFamily: "'Inter', sans-serif" }}>{a.name}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-[13px] text-right" style={{ color: 'rgba(200,206,218,0.7)', fontFamily: "'Inter', sans-serif" }}>{a.clicks}</td>
+                      <td className="py-3 px-3 text-[13px] text-right" style={{ color: 'rgba(200,206,218,0.7)', fontFamily: "'Inter', sans-serif" }}>{a.signups}</td>
+                      <td className="py-3 px-3 text-[13px] font-semibold text-right" style={{ color: '#8ee7b0', fontFamily: "'Space Grotesk', sans-serif" }}>{fmtBrl(a.available)}</td>
+                      <td className="py-3 px-3 text-[13px] text-right" style={{ color: 'rgba(252,211,77,0.9)', fontFamily: "'Space Grotesk', sans-serif" }}>{fmtBrl(a.pending)}</td>
+                      <td className="py-3 px-3 text-[13px] text-right" style={{ color: 'rgba(200,206,218,0.7)', fontFamily: "'Space Grotesk', sans-serif" }}>{fmtBrl(a.paid)}</td>
+                      <td className="py-3 px-3 text-[11px]" style={{ color: 'rgba(170,176,188,0.55)', fontFamily: "'Inter', sans-serif", maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.pixKey || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* ── Usuários ── */}

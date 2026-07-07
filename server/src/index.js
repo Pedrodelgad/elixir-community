@@ -11,12 +11,12 @@ import crypto from 'crypto'
 import { authenticator } from 'otplib'
 import QRCode from 'qrcode'
 import { PrismaClient } from '@prisma/client'
-import { sendPasswordCode, sendTwoFactorCode, mailConfigured } from './mail.js'
+import { sendPasswordCode, sendTwoFactorCode, sendWithdrawCode, mailConfigured } from './mail.js'
 import { getOAuthUrl, exchangeCode, getDiscordUser, addToGuild, addAlphaRole, removeAlphaRole, sendDM } from './discord.js'
 import { startGateway } from './gateway.js'
 import { stripe, stripeWebhookSecret, RECURRING_INTERVAL } from './stripe.js'
-import { rewardfulConfigured, getDefaultCampaignId, createAffiliate, getAffiliate, getCommissions } from './rewardful.js'
 import { solanaConfigured, buildPaymentTx, verifyPayment } from './solana.js'
+import { asaasConfigured, sendPixTransfer, getTransfer } from './asaas.js'
 import { fileURLToPath } from 'url'
 import path from 'path'
 import fs from 'fs'
@@ -121,6 +121,13 @@ if (!IS_PROD) {
 
 // Formato do usuário enviado ao front (nunca inclui a senha).
 // plan é calculado: 'alpha' se a assinatura existe E não expirou.
+// ── Afiliados (próprio): constantes/helpers de link ──
+const AFFILIATE_RATE = 0.30 // 30% padrão de comissão
+const MIN_PAYOUT_BRL = 5000 // saque mínimo: R$ 50,00 (centavos) — ajuste numa linha só
+const affiliateBase = () => process.env.CORS_ORIGIN || 'https://elixiralpha.com'
+const affiliateLink = (code) => `${affiliateBase()}/?ref=${code}`
+const refCodeFrom = (h) => (h || 'user').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 24) || 'user'
+
 function toClient(user) {
   const sub = user.subscription
   const active = sub && new Date(sub.expiresAt) > new Date()
@@ -135,9 +142,9 @@ function toClient(user) {
     expiresAt: active ? sub.expiresAt : null,
     discordLinked: !!user.discordId,
     twoFactorEnabled: !!user.twoFactorEnabled,
-    isAffiliate: !!user.affiliateId,
-    affiliateLink: user.affiliateLink || null,
-    affiliateToken: user.affiliateToken || null,
+    isAffiliate: !!user.refCode,
+    refCode: user.refCode || null,
+    affiliateLink: user.refCode ? affiliateLink(user.refCode) : null,
   }
 }
 
@@ -210,6 +217,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     data: { name: name.trim(), handle: cleanHandle, email: cleanEmail, password: hash },
     include: { subscription: true },
   })
+  await applyReferral(user, req)  // atribuição de afiliado (cookie elx_ref)
   setToken(res, user.id)
   res.json({ user: toClient(user) })
 })
@@ -475,6 +483,7 @@ app.post('/api/auth/discord/link', authLimiter, async (req, res) => {
       },
       include: { subscription: true },
     })
+    await applyReferral(user, req)  // atribuição de afiliado (cookie elx_ref)
   } else {
     // Entrar numa conta existente (e-mail + senha) e vincular o Discord nela — ignora o e-mail do Discord
     const acc = await prisma.user.findUnique({ where: { email: (email || '').trim().toLowerCase() }, include: { subscription: true } })
@@ -528,6 +537,8 @@ app.patch('/api/account', auth, async (req, res) => {
 const resetCodes = new Map() // userId -> { code, expires, attempts }
 // Recuperação do 2FA por email (fallback de quem perdeu o app autenticador).
 const twoFactorEmailCodes = new Map() // userId -> { code, expires, attempts }
+// Confirmação de saque do afiliado (guarda também o snapshot do saque pedido).
+const payoutCodes = new Map() // userId -> { code, expires, attempts, amountBrl, method, destination }
 const CODE_TTL = 15 * 60 * 1000 // 15 min
 
 // Código de 6 dígitos criptograficamente seguro (não Math.random, que é previsível)
@@ -836,6 +847,14 @@ async function handleSessionPaid(session) {
     stripeCustomerId: session.customer || null,
     stripeSubscriptionId,
   })
+
+  // Afiliados: grava o pagamento + comissão (cartão = subscription, PIX = payment)
+  await recordPaymentAndCommission({
+    userId, planId,
+    amountBrl: session.amount_total || 0,
+    method: session.mode === 'subscription' ? 'card' : 'pix',
+    provider: 'stripe', providerRef: session.id, kind: 'first',
+  })
 }
 
 // Renovação automática do cartão (fatura de ciclo paga) → estende a validade
@@ -852,6 +871,13 @@ async function handleRenewal(invoice) {
     priceSol: plan?.priceSol || 0,
     priceBrl: invoice.amount_paid || 0,
     stripeCustomerId: sub.customer, stripeSubscriptionId: sub.id,
+  })
+
+  // Afiliados: registra a renovação (first-only → não gera comissão, mas fica no ledger)
+  await recordPaymentAndCommission({
+    userId, planId,
+    amountBrl: invoice.amount_paid || 0,
+    method: 'card', provider: 'stripe', providerRef: invoice.id, kind: 'renewal',
   })
 }
 
@@ -895,6 +921,13 @@ async function stripeWebhook(req, res) {
       case 'customer.subscription.deleted':
         await handleSubscriptionDeleted(event.data.object)
         break
+      case 'charge.refunded':          // reembolso → estorna a comissão do afiliado
+      case 'charge.dispute.created': { // chargeback → idem
+        const charge = event.type === 'charge.refunded' ? event.data.object : event.data.object.charge
+        const chargeObj = typeof charge === 'string' ? await stripe.charges.retrieve(charge) : charge
+        await reverseCommissionForUser(await userIdFromCharge(chargeObj), event.type)
+        break
+      }
     }
   } catch (e) {
     console.error(`[Stripe] erro ao processar ${event.type}:`, e.message)
@@ -902,107 +935,453 @@ async function stripeWebhook(req, res) {
   res.json({ received: true })
 }
 
-/* ─── Programa de afiliados (Rewardful) ─── */
+/* ─── Programa de afiliados (próprio) ─── */
 
-// Cache dos stats por afiliado (rate limit ~45 req/30s na API) — TTL 60s
-const affiliateStatsCache = new Map() // affiliateId -> { data, expires }
-
-const affiliateTokenFrom = (handle) =>
-  (handle || 'user').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 30) || 'user'
-
-// Vira afiliado: cria no Rewardful e salva o UUID + token + link no usuário
-app.post('/api/affiliate/join', auth, payLimiter, async (req, res) => {
-  if (!rewardfulConfigured) return res.status(503).json({ error: 'Programa de afiliados não configurado' })
-  if (req.user.affiliateId) {
-    return res.json({ affiliate: { id: req.user.affiliateId, token: req.user.affiliateToken, url: req.user.affiliateLink } })
+// Chave de saque: cripto derivada do JWT_SECRET (sem env nova). AES-256-GCM + HMAC.
+const WKEY_ENC = crypto.createHash('sha256').update(JWT_SECRET + '::wkey-enc').digest()
+const WKEY_MAC = JWT_SECRET + '::wkey-mac'
+function genWithdrawKey() {
+  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // sem I O 0 1
+  const r = crypto.randomBytes(16)
+  let s = ''
+  for (let i = 0; i < 16; i++) s += abc[r[i] % 32]
+  return 'ELX-' + s.slice(0, 4) + '-' + s.slice(4, 8) + '-' + s.slice(8, 12) + '-' + s.slice(12, 16)
+}
+const hashWithdrawKey = (k) => crypto.createHmac('sha256', WKEY_MAC).update(String(k).trim().toUpperCase()).digest('hex')
+function encWithdrawKey(k) {
+  const iv = crypto.randomBytes(12)
+  const c = crypto.createCipheriv('aes-256-gcm', WKEY_ENC, iv)
+  const enc = Buffer.concat([c.update(k, 'utf8'), c.final()])
+  return Buffer.concat([iv, c.getAuthTag(), enc]).toString('base64')
+}
+function decWithdrawKey(blob) {
+  const raw = Buffer.from(blob, 'base64')
+  const d = crypto.createDecipheriv('aes-256-gcm', WKEY_ENC, raw.subarray(0, 12))
+  d.setAuthTag(raw.subarray(12, 28))
+  return Buffer.concat([d.update(raw.subarray(28)), d.final()]).toString('utf8')
+}
+// Gera a chave de saque do usuário se ainda não tiver (idempotente, retry anti-colisão)
+async function ensureWithdrawKey(userId) {
+  const u = await prisma.user.findUnique({ where: { id: userId } })
+  if (!u || u.withdrawKeyHash) return
+  for (let i = 0; i < 5; i++) {
+    const key = genWithdrawKey()
+    try {
+      await prisma.user.update({ where: { id: userId }, data: { withdrawKeyEnc: encWithdrawKey(key), withdrawKeyHash: hashWithdrawKey(key) } })
+      return
+    } catch { /* colisão @unique → tenta outra */ }
   }
-  try {
-    const campaignId = await getDefaultCampaignId()
-    const [firstName, ...rest] = (req.user.name || req.user.handle).trim().split(/\s+/)
-    const lastName = rest.join(' ') || firstName
+}
 
-    // Token a partir do handle; em conflito, tenta com sufixo aleatório
-    let token = affiliateTokenFrom(req.user.handle)
-    let affiliate
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        affiliate = await createAffiliate({ firstName, lastName, email: req.user.email, token, campaignId })
-        break
-      } catch (e) {
-        if (/token/i.test(e.message) && attempt < 2) {
-          token = `${affiliateTokenFrom(req.user.handle)}${Math.floor(Math.random() * 9000 + 1000)}`
-          continue
-        }
-        throw e
+// Atribuição: lê o cookie elx_ref e marca quem indicou este usuário (last-click, trava auto-indicação)
+async function applyReferral(user, req) {
+  try {
+    const code = String(req.cookies?.elx_ref || '').trim().toLowerCase()
+    if (!code) return
+    const ref = await prisma.user.findUnique({ where: { refCode: code } })
+    if (!ref || ref.id === user.id) return   // não existe ou é a própria pessoa
+    if (ref.email === user.email) return      // mesmo e-mail = auto-indicação
+    await prisma.user.update({ where: { id: user.id }, data: { referredById: ref.id } })
+  } catch { /* atribuição nunca bloqueia o cadastro */ }
+}
+
+// Grava o Payment (idempotente) e cria a comissão na 1ª compra de um indicado (cartão/PIX)
+async function recordPaymentAndCommission({ userId, planId, amountBrl = 0, method, provider, providerRef, kind = 'first' }) {
+  if (!providerRef) return
+  if (await prisma.payment.findUnique({ where: { providerRef } })) return  // idempotência (webhook reentregue)
+  let payment
+  try {
+    payment = await prisma.payment.create({ data: { userId, planId, amountBrl, method, provider, providerRef, kind } })
+  } catch { return }  // corrida: outro request já gravou
+  // Comissão só em cartão/PIX, só na 1ª compra (first-only), e só se tem indicador
+  if (method === 'sol' || kind !== 'first' || amountBrl <= 0) return
+  const buyer = await prisma.user.findUnique({ where: { id: userId } })
+  if (!buyer?.referredById) return
+  const affiliate = await prisma.user.findUnique({ where: { id: buyer.referredById } })
+  if (!affiliate) return
+  const rate = affiliate.commissionRate ?? AFFILIATE_RATE
+  const amount = Math.round(amountBrl * rate)
+  if (amount <= 0) return
+  await prisma.commission.create({ data: {
+    affiliateUserId: affiliate.id, referredUserId: buyer.id, paymentId: payment.id,
+    saleAmountBrl: amountBrl, rate, amountBrl: amount, status: 'approved',
+  } }).then(() => console.log(`[Affiliate] comissão R$${(amount / 100).toFixed(2)} p/ ${affiliate.name} (venda de ${buyer.name})`))
+    .catch(e => console.error('[Affiliate] comissão erro:', e.message))
+}
+
+// Descobre o nosso userId a partir de um charge da Stripe (reembolso/chargeback não trazem metadata direto)
+async function userIdFromCharge(charge) {
+  try {
+    if (charge.invoice) { // cartão: charge → invoice → subscription.metadata.userId
+      const inv = await stripe.invoices.retrieve(charge.invoice)
+      if (inv.subscription) {
+        const sub = await stripe.subscriptions.retrieve(inv.subscription)
+        const id = Number(sub.metadata?.userId); if (id) return id
       }
     }
+    if (charge.payment_intent) { // PIX/único: charge → checkout session.metadata.userId
+      const list = await stripe.checkout.sessions.list({ payment_intent: charge.payment_intent, limit: 1 })
+      const id = Number(list.data?.[0]?.metadata?.userId); if (id) return id
+    }
+  } catch (e) { console.error('[Affiliate] userIdFromCharge:', e.message) }
+  return null
+}
 
-    const link = affiliate.links?.[0]?.url || affiliate.url || null
-    const realToken = affiliate.links?.[0]?.token || affiliate.token || token
+// Estorna a comissão da 1ª compra de um usuário (reembolso/chargeback). Não remove do ledger — marca 'reversed'.
+async function reverseCommissionForUser(userId, reason = 'refund') {
+  if (!userId) return
+  const payment = await prisma.payment.findFirst({
+    where: { userId, kind: 'first' }, orderBy: { createdAt: 'asc' }, include: { commission: true },
+  })
+  const c = payment?.commission
+  if (!c || c.status === 'reversed' || c.status === 'void') return
+  await prisma.commission.update({ where: { id: c.id }, data: { status: 'reversed' } })
+  const warn = c.status === 'paid' ? ' ⚠️ JÁ PAGA — clawback manual necessário' : ''
+  console.log(`[Affiliate] comissão #${c.id} estornada (${reason}) — era '${c.status}'${warn}`)
+}
 
-    const updated = await prisma.user.update({
-      where: { id: req.user.id },
-      data: { affiliateId: affiliate.id, affiliateToken: realToken, affiliateLink: link },
-      include: { subscription: true },
+// Registra um clique no link de afiliado (front chama quando entra com ?ref=)
+app.post('/api/ref/hit', async (req, res) => {
+  const code = String(req.body?.ref || '').trim().toLowerCase()
+  if (code) await prisma.user.updateMany({ where: { refCode: code }, data: { refClicks: { increment: 1 } } }).catch(() => {})
+  res.json({ ok: true })
+})
+
+// Vira afiliado: gera um refCode único (local, sem chamada externa) + a chave de saque
+app.post('/api/affiliate/join', auth, payLimiter, async (req, res) => {
+  const fresh = await prisma.user.findUnique({ where: { id: req.user.id }, include: { subscription: true } })
+  if (fresh.refCode) return res.json({ user: toClient(fresh), refCode: fresh.refCode, link: affiliateLink(fresh.refCode) })
+
+  const base = refCodeFrom(fresh.handle)
+  let code = null
+  for (let i = 0; i < 8; i++) {
+    const c = i === 0 ? base : `${base}${Math.floor(Math.random() * 9000 + 1000)}`
+    if (!(await prisma.user.findUnique({ where: { refCode: c } }))) { code = c; break }
+  }
+  if (!code) return res.status(500).json({ error: 'Não foi possível gerar seu código' })
+  await prisma.user.update({ where: { id: fresh.id }, data: { refCode: code } })
+  await ensureWithdrawKey(fresh.id)
+  const updated = await prisma.user.findUnique({ where: { id: fresh.id }, include: { subscription: true } })
+  console.log(`[Affiliate] criado user=${updated.name} refCode=${code}`)
+  res.json({ user: toClient(updated), refCode: code, link: affiliateLink(code) })
+})
+
+// Painel do afiliado — tudo de query local (cliques, cadastros, conversões, saldo). Centavos.
+app.get('/api/affiliate/stats', auth, async (req, res) => {
+  const me = await prisma.user.findUnique({ where: { id: req.user.id } })
+  if (!me.refCode) return res.status(400).json({ error: 'Você ainda não é afiliado' })
+
+  const [signups, commissions, payoutRows] = await Promise.all([
+    prisma.user.count({ where: { referredById: me.id } }),
+    prisma.commission.findMany({ where: { affiliateUserId: me.id }, orderBy: { createdAt: 'asc' } }),
+    prisma.payout.findMany({ where: { affiliateUserId: me.id }, orderBy: { createdAt: 'desc' }, take: 20 }),
+  ])
+
+  let available = 0, pending = 0, paid = 0
+  const byDay = {}
+  for (const c of commissions) {
+    if (c.status === 'approved') available += c.amountBrl
+    else if (c.status === 'pending') pending += c.amountBrl   // preso num saque em processamento
+    else if (c.status === 'paid') paid += c.amountBrl
+    if (c.status === 'reversed' || c.status === 'void') continue
+    const day = c.createdAt.toISOString().slice(0, 10)
+    byDay[day] = (byDay[day] || 0) + c.amountBrl
+  }
+  const timeline = Object.entries(byDay).map(([date, amount]) => ({ date, amount }))
+  const conversions = commissions.filter(c => c.status !== 'reversed' && c.status !== 'void').length
+  const payouts = payoutRows.map(p => ({
+    id: p.id, amountBrl: p.amountBrl, method: p.method, status: p.status,
+    createdAt: p.createdAt, paidAt: p.paidAt,
+  }))
+
+  res.json({
+    currency: 'BRL',
+    refCode: me.refCode,
+    link: affiliateLink(me.refCode),
+    rate: me.commissionRate ?? AFFILIATE_RATE,
+    clicks: me.refClicks || 0,
+    signups,
+    conversions,
+    totals: { available, pending, paid },
+    minPayout: MIN_PAYOUT_BRL,
+    hasWithdrawKey: !!me.withdrawKeyHash,
+    hasPassword: !!me.password,
+    payoutMethod: me.payoutMethod || null,
+    payoutDest: me.payoutDest || null,
+    payouts,
+    totalCommissions: commissions.length,
+    timeline,
+  })
+})
+
+/* ─── Saque (Fase 2): revelar chave · solicitar · confirmar ─── */
+
+// Saldo disponível do afiliado (soma das comissões 'approved', em centavos)
+async function affiliateAvailable(userId) {
+  const rows = await prisma.commission.findMany({ where: { affiliateUserId: userId, status: 'approved' }, select: { amountBrl: true } })
+  return rows.reduce((s, c) => s + c.amountBrl, 0)
+}
+
+// 1) Revela a chave de saque — só depois de digitar a SENHA da conta (gate anti-roubo de sessão)
+app.post('/api/affiliate/reveal-key', auth, authLimiter, async (req, res) => {
+  const me = await prisma.user.findUnique({ where: { id: req.user.id } })
+  if (!me.refCode) return res.status(400).json({ error: 'Você ainda não é afiliado' })
+  if (!me.password) return res.status(400).json({ error: 'Defina uma senha da conta antes de revelar a chave' })
+  const ok = await bcrypt.compare(String(req.body?.password || ''), me.password)
+  if (!ok) return res.status(401).json({ error: 'Senha incorreta' })
+  if (!me.withdrawKeyEnc) {           // afiliado antigo sem chave ainda → gera agora
+    await ensureWithdrawKey(me.id)
+    const u = await prisma.user.findUnique({ where: { id: me.id } })
+    return res.json({ key: decWithdrawKey(u.withdrawKeyEnc) })
+  }
+  res.json({ key: decWithdrawKey(me.withdrawKeyEnc) })
+})
+
+// Envia o PIX automaticamente para o afiliado via Asaas. Não bloqueia o fluxo do usuário.
+// Retorna: { accepted, externalRef, status } aceito · { rejected, error } recusado na hora · { pending } sem PSP.
+// O status FINAL ('paid'/'failed') chega depois pelo webhook do Asaas (TRANSFER_DONE/FAILED/CANCELLED).
+async function disbursePix(payout) {
+  if (!asaasConfigured) return { pending: true } // sem key → fica 'processing'
+  try {
+    const t = await sendPixTransfer({
+      value: payout.amountBrl / 100,
+      pixKey: payout.destination,
+      externalReference: payout.id,
+      description: `Comissao de afiliado Elixir #${payout.id}`,
     })
-    console.log(`[Affiliate] criado user=${updated.name} token=${realToken}`)
-    res.json({ user: toClient(updated), affiliate: { id: affiliate.id, token: realToken, url: link } })
+    return { accepted: true, externalRef: String(t.id || ''), status: t.status }
+  } catch (e) {
+    // recusado na hora: saldo insuficiente no Asaas, chave PIX inválida, etc.
+    console.error(`[Asaas] transferência recusada (payout #${payout.id}): ${e.message}`)
+    return { rejected: true, error: e.message }
+  }
+}
+
+// 2) Solicita o saque — pede a chave PIX + saldo e dispara o código por e-mail (ainda NÃO escoa o saldo)
+app.post('/api/affiliate/payout/request', auth, payLimiter, async (req, res) => {
+  const me = await prisma.user.findUnique({ where: { id: req.user.id } })
+  if (!me.refCode) return res.status(400).json({ error: 'Você ainda não é afiliado' })
+
+  const pixKey = String(req.body?.pixKey || req.body?.destination || '').trim()
+  if (pixKey.length < 4 || pixKey.length > 140) return res.status(400).json({ error: 'Informe uma chave PIX válida' })
+
+  // Um saque por vez (não deixa pedir de novo com saque em aberto)
+  const openPayout = await prisma.payout.findFirst({ where: { affiliateUserId: me.id, status: { in: ['requested', 'processing'] } } })
+  if (openPayout) return res.status(409).json({ error: 'Você já tem um saque em andamento' })
+
+  const available = await affiliateAvailable(me.id) // saca sempre o total disponível
+  if (available < MIN_PAYOUT_BRL) {
+    return res.status(400).json({ error: `Saldo mínimo para saque é R$ ${(MIN_PAYOUT_BRL / 100).toFixed(2).replace('.', ',')}` })
+  }
+
+  const code = gen6()
+  payoutCodes.set(me.id, { code, expires: Date.now() + CODE_TTL, attempts: 0, amountBrl: available, method: 'pix', destination: pixKey })
+  try {
+    await sendWithdrawCode(me.email, code, available)
   } catch (err) {
-    console.error('[Affiliate] erro ao criar:', err.message)
-    const friendly = /email/i.test(err.message)
-      ? 'Este e-mail já está cadastrado como afiliado no Rewardful.'
-      : 'Não foi possível criar o afiliado: ' + err.message
-    res.status(502).json({ error: friendly })
+    console.error('Erro ao enviar email de saque:', err.message)
+    return res.status(502).json({ error: 'Não foi possível enviar o email — tente de novo' })
+  }
+  res.json({ ok: true, sentTo: maskEmail(me.email), amountBrl: available, ...(!IS_PROD && !mailConfigured ? { devCode: code } : {}) })
+})
+
+// 3) Confirma com o código → cria o Payout, ESCOA o saldo (approved → pending) e dispara o PIX automático
+app.post('/api/affiliate/payout/confirm', auth, payLimiter, async (req, res) => {
+  const intent = payoutCodes.get(req.user.id)
+  if (!intent) return res.status(400).json({ error: 'Nenhum saque pendente — solicite de novo' })
+  const check = consumeEmailCode(payoutCodes, req.user.id, req.body?.code)
+  if (!check.ok) return res.status(400).json({ error: check.error })
+
+  let payout
+  try {
+    payout = await prisma.$transaction(async (tx) => {
+      // Trava concorrência: só as comissões que ainda estão disponíveis entram neste saque
+      const approved = await tx.commission.findMany({ where: { affiliateUserId: req.user.id, status: 'approved' }, select: { id: true, amountBrl: true } })
+      const total = approved.reduce((s, c) => s + c.amountBrl, 0)
+      if (total < MIN_PAYOUT_BRL) throw new Error('SALDO_MUDOU')
+      const openPayout = await tx.payout.findFirst({ where: { affiliateUserId: req.user.id, status: { in: ['requested', 'processing'] } } })
+      if (openPayout) throw new Error('SAQUE_ABERTO')
+
+      const p = await tx.payout.create({ data: {
+        affiliateUserId: req.user.id, amountBrl: total,
+        method: 'pix', destination: intent.destination, status: 'requested',
+      } })
+      await tx.commission.updateMany({ where: { id: { in: approved.map(c => c.id) } }, data: { status: 'pending', payoutId: p.id } })
+      // Guarda a última chave PIX p/ pré-preencher no próximo saque
+      await tx.user.update({ where: { id: req.user.id }, data: { payoutMethod: 'pix', payoutDest: intent.destination } })
+      return p
+    })
+  } catch (e) {
+    if (e.message === 'SALDO_MUDOU') return res.status(400).json({ error: 'Seu saldo mudou — confira e solicite de novo' })
+    if (e.message === 'SAQUE_ABERTO') return res.status(409).json({ error: 'Você já tem um saque em andamento' })
+    console.error('[Payout] erro ao confirmar:', e.message)
+    return res.status(500).json({ error: 'Não foi possível concluir o saque' })
+  }
+
+  // Envia o PIX automaticamente (sem admin). Aceito → fica 'processing' até o webhook confirmar 'paid'.
+  // Recusado na hora (saldo/chave) → falha e devolve o saldo. Sem PSP → fica 'processing'.
+  let status = 'processing', rejectMsg = null
+  try {
+    const r = await disbursePix(payout)
+    if (r.accepted) {
+      await prisma.payout.update({ where: { id: payout.id }, data: { status: 'processing', externalRef: r.externalRef || null } })
+    } else if (r.rejected) {
+      await prisma.$transaction([
+        prisma.payout.update({ where: { id: payout.id }, data: { status: 'failed' } }),
+        prisma.commission.updateMany({ where: { payoutId: payout.id, status: 'pending' }, data: { status: 'approved', payoutId: null } }),
+      ])
+      status = 'failed'; rejectMsg = r.error
+    } else {
+      await prisma.payout.update({ where: { id: payout.id }, data: { status: 'processing' } })
+    }
+  } catch (e) {
+    console.error('[Payout] disbursePix falhou:', e.message)
+    await prisma.payout.update({ where: { id: payout.id }, data: { status: 'processing' } }).catch(() => {})
+  }
+  console.log(`[Payout] #${payout.id} R$${(payout.amountBrl / 100).toFixed(2)} PIX → ${status} (user=${req.user.id})`)
+  if (status === 'failed') {
+    return res.status(400).json({ error: `Não foi possível enviar o PIX${rejectMsg ? `: ${rejectMsg}` : ''}. Seu saldo foi devolvido — confira a chave e tente de novo.` })
+  }
+  res.json({ ok: true, payout: { id: payout.id, amountBrl: payout.amountBrl, method: 'pix', status } })
+})
+
+// Webhook do Asaas — status das transferências PIX (saque). Público (sem cookie); valida token se configurado.
+// TRANSFER_DONE → saque pago · TRANSFER_FAILED/CANCELLED → devolve saldo · TRANSFER_BLOCKED → atenção manual.
+app.post('/api/webhooks/asaas', async (req, res) => {
+  const token = process.env.ASAAS_WEBHOOK_TOKEN
+  if (token && req.headers['asaas-access-token'] !== token) {
+    console.warn('[Asaas] webhook rejeitado: token inválido')
+    return res.status(401).end()
+  }
+  const event = String(req.body?.event || '')
+  const transfer = req.body?.transfer || {}
+  const payoutId = Number(transfer.externalReference)
+  if (!payoutId) return res.json({ received: true }) // não é de um saque nosso
+
+  if (!/^TRANSFER_/.test(event)) return res.json({ received: true }) // só nos importam eventos de transferência
+
+  try {
+    const payout = await prisma.payout.findUnique({ where: { id: payoutId } })
+    if (!payout) return res.json({ received: true })
+    if (payout.status === 'paid') return res.json({ received: true }) // já finalizado (idempotência)
+
+    // Não confia no payload: busca o status AUTORITATIVO no Asaas e age por ele (anti-spoof).
+    let realStatus = String(transfer.status || '')
+    if (asaasConfigured && (payout.externalRef || transfer.id)) {
+      try { realStatus = (await getTransfer(payout.externalRef || transfer.id)).status }
+      catch (e) { console.error('[Asaas] getTransfer falhou:', e.message); return res.status(500).json({ error: 'retry' }) }
+    }
+
+    if (realStatus === 'DONE') {
+      const now = new Date()
+      await prisma.$transaction([
+        prisma.payout.update({ where: { id: payoutId }, data: { status: 'paid', paidAt: now } }),
+        prisma.commission.updateMany({ where: { payoutId, status: 'pending' }, data: { status: 'paid', paidAt: now } }),
+      ])
+      console.log(`[Asaas] saque #${payoutId} PAGO ✅`)
+    } else if (realStatus === 'FAILED' || realStatus === 'CANCELLED') {
+      await prisma.$transaction([
+        prisma.payout.update({ where: { id: payoutId }, data: { status: 'failed' } }),
+        prisma.commission.updateMany({ where: { payoutId, status: 'pending' }, data: { status: 'approved', payoutId: null } }),
+      ])
+      console.log(`[Asaas] saque #${payoutId} ${realStatus} — saldo devolvido ao afiliado`)
+    } else if (realStatus === 'BLOCKED') {
+      console.warn(`[Asaas] saque #${payoutId} BLOQUEADO — precisa de atenção manual (mantido em processamento)`)
+    } // PENDING / BANK_PROCESSING → ignora (segue em processamento)
+
+    res.json({ received: true })
+  } catch (e) {
+    console.error('[Asaas] erro no webhook:', e.message)
+    res.status(500).json({ error: 'erro' }) // Asaas re-tenta
   }
 })
 
-// Stats + comissões do afiliado (proxy com cache). Valores em centavos.
-app.get('/api/affiliate/stats', auth, async (req, res) => {
-  if (!rewardfulConfigured) return res.status(503).json({ error: 'Programa de afiliados não configurado' })
-  const id = req.user.affiliateId
-  if (!id) return res.status(400).json({ error: 'Você ainda não é afiliado' })
+/* ─── Admin: visão dos afiliados (só leitura) + válvula manual de saque ─── */
 
-  const cached = affiliateStatsCache.get(id)
-  if (cached && cached.expires > Date.now()) return res.json(cached.data)
+// Saldo de cada afiliado (disponível/em processamento/pago) — o admin acompanha, não paga.
+app.get('/api/admin/affiliates', auth, adminOnly, async (req, res) => {
+  const [affiliates, commAgg, signupAgg] = await Promise.all([
+    prisma.user.findMany({
+      where: { refCode: { not: null } },
+      select: { id: true, name: true, handle: true, refCode: true, refClicks: true, commissionRate: true, payoutDest: true },
+    }),
+    prisma.commission.groupBy({ by: ['affiliateUserId', 'status'], _sum: { amountBrl: true } }),
+    prisma.user.groupBy({ by: ['referredById'], _count: { _all: true }, where: { referredById: { not: null } } }),
+  ])
 
+  const bal = {} // id -> { available, pending, paid }
+  for (const r of commAgg) {
+    const b = (bal[r.affiliateUserId] ||= { available: 0, pending: 0, paid: 0 })
+    const amt = r._sum.amountBrl || 0
+    if (r.status === 'approved') b.available += amt
+    else if (r.status === 'pending') b.pending += amt
+    else if (r.status === 'paid') b.paid += amt
+  }
+  const signups = {}
+  for (const r of signupAgg) signups[r.referredById] = r._count._all
+
+  const rows = affiliates.map(a => ({
+    id: a.id, name: a.name, handle: a.handle, refCode: a.refCode,
+    clicks: a.refClicks || 0, signups: signups[a.id] || 0,
+    rate: a.commissionRate ?? AFFILIATE_RATE, pixKey: a.payoutDest || null,
+    ...(bal[a.id] || { available: 0, pending: 0, paid: 0 }),
+  })).sort((x, y) => (y.available + y.pending) - (x.available + x.pending))
+
+  res.json({ affiliates: rows })
+})
+
+// Lista de saques em aberto — válvula MANUAL (o fluxo normal é automático via PIX/PSP; isto é fallback).
+app.get('/api/admin/payouts', auth, adminOnly, async (req, res) => {
+  const status = req.query.status ? String(req.query.status) : null
+  const where = status ? { status } : { status: { in: ['requested', 'processing'] } }
+  const rows = await prisma.payout.findMany({
+    where, orderBy: { createdAt: 'asc' },
+    include: { affiliate: { select: { id: true, name: true, email: true, refCode: true } } },
+  })
+  res.json({ payouts: rows })
+})
+
+// Marca um saque como PAGO (operador já enviou o PIX/cripto) → comissões viram 'paid'
+app.post('/api/admin/payouts/:id/settle', auth, adminOnly, async (req, res) => {
+  const id = Number(req.params.id)
+  const externalRef = req.body?.externalRef ? String(req.body.externalRef).slice(0, 200) : null
   try {
-    const [affiliate, commissions] = await Promise.all([getAffiliate(id), getCommissions(id)])
+    await prisma.$transaction(async (tx) => {
+      const p = await tx.payout.findUnique({ where: { id } })
+      if (!p) throw new Error('NAO_ENCONTRADO')
+      if (p.status === 'paid') throw new Error('JA_PAGO')
+      const now = new Date()
+      await tx.payout.update({ where: { id }, data: { status: 'paid', paidAt: now, externalRef } })
+      await tx.commission.updateMany({ where: { payoutId: id, status: 'pending' }, data: { status: 'paid', paidAt: now } })
+    })
+    console.log(`[Payout] liquidado #${id} por admin=${req.user.id}`)
+    res.json({ ok: true })
+  } catch (e) {
+    if (e.message === 'NAO_ENCONTRADO') return res.status(404).json({ error: 'Saque não encontrado' })
+    if (e.message === 'JA_PAGO') return res.status(400).json({ error: 'Esse saque já foi pago' })
+    console.error('[Payout] erro ao liquidar:', e.message)
+    res.status(500).json({ error: 'Erro ao liquidar o saque' })
+  }
+})
 
-    // Totais por estado (centavos)
-    const totals = { due: 0, pending: 0, paid: 0, voided: 0 }
-    for (const c of commissions) {
-      if (totals[c.state] !== undefined) totals[c.state] += (c.amount || 0)
-    }
-
-    // Ganhos ao longo do tempo (por dia de created_at), ignorando voided
-    const byDay = {}
-    for (const c of commissions) {
-      if (c.state === 'voided') continue
-      const day = (c.created_at || '').slice(0, 10)
-      if (day) byDay[day] = (byDay[day] || 0) + (c.amount || 0)
-    }
-    const timeline = Object.entries(byDay).sort(([a], [b]) => a.localeCompare(b)).map(([date, amount]) => ({ date, amount }))
-
-    const link = affiliate.links?.[0] || {}
-    const visitors = affiliate.visitors ?? link.visitors ?? 0
-    const leads = affiliate.leads ?? link.leads ?? 0
-    const conversions = affiliate.conversions ?? link.conversions ?? 0
-
-    const data = {
-      currency: commissions[0]?.currency || 'BRL',
-      totals,
-      totalCommissions: commissions.length,
-      timeline,
-      visitors, leads, conversions,
-      conversionRate: visitors > 0 ? conversions / visitors : 0,
-      link: req.user.affiliateLink,
-      token: req.user.affiliateToken,
-    }
-    affiliateStatsCache.set(id, { data, expires: Date.now() + 60_000 })
-    res.json(data)
-  } catch (err) {
-    console.error('[Affiliate] erro nos stats:', err.message)
-    res.status(502).json({ error: 'Não foi possível carregar os dados de afiliado' })
+// Falha/cancela um saque → devolve as comissões pro saldo disponível (approved)
+app.post('/api/admin/payouts/:id/fail', auth, adminOnly, async (req, res) => {
+  const id = Number(req.params.id)
+  try {
+    await prisma.$transaction(async (tx) => {
+      const p = await tx.payout.findUnique({ where: { id } })
+      if (!p) throw new Error('NAO_ENCONTRADO')
+      if (p.status === 'paid') throw new Error('JA_PAGO')
+      await tx.payout.update({ where: { id }, data: { status: 'failed' } })
+      await tx.commission.updateMany({ where: { payoutId: id, status: 'pending' }, data: { status: 'approved', payoutId: null } })
+    })
+    console.log(`[Payout] falhou/cancelado #${id} — saldo devolvido — admin=${req.user.id}`)
+    res.json({ ok: true })
+  } catch (e) {
+    if (e.message === 'NAO_ENCONTRADO') return res.status(404).json({ error: 'Saque não encontrado' })
+    if (e.message === 'JA_PAGO') return res.status(400).json({ error: 'Saque já foi pago — não dá pra falhar' })
+    console.error('[Payout] erro ao falhar:', e.message)
+    res.status(500).json({ error: 'Erro ao cancelar o saque' })
   }
 })
 
@@ -1011,7 +1390,7 @@ app.get('/api/affiliate/stats', auth, async (req, res) => {
 const cryptoIntents = new Map()   // reference -> { userId, planId, main, fee, expires }
 const usedSignatures = new Set()  // anti-replay
 
-// 1) Monta a transação (split 90/10) para a Phantom assinar
+// 1) Monta a transação (split 85/15) para a Phantom assinar
 app.post('/api/crypto/intent', auth, payLimiter, async (req, res) => {
   if (!solanaConfigured) return res.status(503).json({ error: 'Pagamento em SOL não configurado' })
   const { plan: planId, payer } = req.body
