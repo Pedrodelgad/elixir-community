@@ -37,11 +37,26 @@ function ContentForm({ onSubmit, onCancel, initial, submitLabel = 'Adicionar' })
   const [desc, setDesc] = useState(initial?.description || '')
   const [file, setFile] = useState(null)
   const existingFile = initial?.type === 'tool' ? initial?.fileName : null
+  const [imageUrl, setImageUrl] = useState(initial?.imageUrl || null)
+  const [imgBusy, setImgBusy] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
 
   const isTool = type === 'tool'
-  const canSubmit = title.trim() && (isTool ? (file || existingFile) : true) && !busy
+  const canSubmit = title.trim() && (isTool ? (file || existingFile) : true) && !busy && !imgBusy
+
+  // Sobe a capa assim que escolhe o arquivo (mostra o preview antes de salvar)
+  const pickImage = async (f) => {
+    if (!f) return
+    setImgBusy(true); setErr(null)
+    try {
+      const fd = new FormData(); fd.append('file', f)
+      const r = await fetch('/api/admin/upload', { method: 'POST', credentials: 'include', body: fd })
+      const j = await r.json()
+      if (!r.ok) throw new Error(j.error || 'Falha ao enviar a imagem')
+      setImageUrl(j.url)
+    } catch (e) { setErr(e.message) } finally { setImgBusy(false) }
+  }
 
   const submit = async () => {
     if (!canSubmit) return
@@ -58,7 +73,7 @@ function ContentForm({ onSubmit, onCancel, initial, submitLabel = 'Adicionar' })
         }
         await onSubmit({ type, title, url: toolUrl, fileName: toolName, description: desc })
       } else {
-        await onSubmit({ type, title, url, fileName: null, description: desc })
+        await onSubmit({ type, title, url, fileName: null, description: desc, imageUrl: imageUrl || '' })
       }
     } catch (e) { setErr(e.message); setBusy(false) }
   }
@@ -73,7 +88,10 @@ function ContentForm({ onSubmit, onCancel, initial, submitLabel = 'Adicionar' })
           </button>
         ))}
       </div>
+
+      {/* 1) Título · 2) Descrição · 3) só então o vídeo/arquivo (mais fácil de organizar) */}
       <input placeholder="Título" value={title} onChange={e => setTitle(e.target.value)} style={inputStyle} />
+      <input placeholder="Descrição (opcional)" value={desc} onChange={e => setDesc(e.target.value)} style={inputStyle} />
 
       {isTool ? (
         <div className="flex flex-col gap-1.5">
@@ -87,10 +105,29 @@ function ContentForm({ onSubmit, onCancel, initial, submitLabel = 'Adicionar' })
           </label>
         </div>
       ) : (
-        <input placeholder="URL do vídeo (YouTube, etc)" value={url} onChange={e => setUrl(e.target.value)} style={inputStyle} />
+        <>
+          <input placeholder="URL do vídeo (YouTube, etc)" value={url} onChange={e => setUrl(e.target.value)} style={inputStyle} />
+
+          {/* Capa 16:9 (opcional) — aparece no card da aula */}
+          <label className="flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors"
+            style={{ background: 'rgba(58,100,220,0.1)', border: '1px dashed rgba(122,167,255,0.35)' }}>
+            <input type="file" accept="image/*" className="hidden" onChange={e => pickImage(e.target.files?.[0] || null)} />
+            <span className="text-[12px] font-semibold" style={{ color: 'rgba(160,195,255,0.9)' }}>🖼️ {imageUrl ? 'Trocar capa' : 'Imagem de capa (16:9, opcional)'}</span>
+            <span className="text-[11px] truncate flex-1" style={{ color: 'rgba(200,206,218,0.55)' }}>
+              {imgBusy ? 'enviando…' : (imageUrl ? 'capa definida' : 'nenhuma')}
+            </span>
+          </label>
+          {imageUrl && (
+            <div className="relative rounded-lg overflow-hidden" style={{ aspectRatio: '16/9', maxWidth: 240, border: '1px solid rgba(122,167,255,0.25)' }}>
+              <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <button onClick={() => setImageUrl(null)} title="Remover capa"
+                className="absolute top-1 right-1 w-6 h-6 flex items-center justify-center text-[12px] rounded-md"
+                style={{ background: 'rgba(10,12,20,0.75)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,180,180,0.9)', cursor: 'pointer' }}>✕</button>
+            </div>
+          )}
+        </>
       )}
 
-      <input placeholder="Descrição (opcional)" value={desc} onChange={e => setDesc(e.target.value)} style={inputStyle} />
       {err && <p className="text-[11px]" style={{ color: 'rgba(255,140,140,0.85)' }}>{err}</p>}
       <div className="flex gap-2">
         <button disabled={!canSubmit} onClick={submit}

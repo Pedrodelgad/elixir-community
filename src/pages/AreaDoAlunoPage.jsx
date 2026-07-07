@@ -36,7 +36,9 @@ function VideoCard({ c }) {
             )
         ) : (
           <button onClick={play} aria-label="Assistir" className="absolute inset-0 flex items-center justify-center" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
-            <div className="w-12 h-12 rounded-full flex items-center justify-center transition-transform group-hover:scale-110" style={{ background: 'rgba(58,123,213,0.4)', border: '1px solid rgba(122,167,255,0.5)' }}>
+            {c.imageUrl && <img src={c.imageUrl} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ zIndex: 0 }} />}
+            {c.imageUrl && <div className="absolute inset-0" style={{ background: 'rgba(6,10,26,0.35)', zIndex: 1 }} />}
+            <div className="relative w-12 h-12 rounded-full flex items-center justify-center transition-transform group-hover:scale-110" style={{ background: 'rgba(58,123,213,0.4)', border: '1px solid rgba(122,167,255,0.5)', zIndex: 2 }}>
               {loading
                 ? <div className="w-4 h-4 rounded-full animate-spin" style={{ border: '2px solid rgba(207,224,255,0.3)', borderTopColor: '#cfe0ff' }} />
                 : <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M8 5v14l11-7-11-7z" fill="#cfe0ff"/></svg>}

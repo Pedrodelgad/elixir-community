@@ -1083,7 +1083,7 @@ async function buildTree(includeVideoUrl = false) {
   for (const ct of contents) {
     const node = byId.get(ct.categoryId)
     if (!node) continue
-    const item = { id: ct.id, type: ct.type, title: ct.title, description: ct.description, position: ct.position }
+    const item = { id: ct.id, type: ct.type, title: ct.title, description: ct.description, imageUrl: ct.imageUrl, position: ct.position }
     if (ct.type === 'tool') { item.url = ct.url; item.fileName = ct.fileName }   // arquivo (gated em /uploads)
     else if (includeVideoUrl) { item.url = ct.url }                              // vídeo: só pro admin editar
     node.contents.push(item)
@@ -1165,7 +1165,7 @@ app.post('/api/admin/upload', auth, adminOnly, (req, res) => {
 
 // Admin: criar conteúdo (vídeo ou ferramenta)
 app.post('/api/admin/contents', auth, adminOnly, async (req, res) => {
-  const { categoryId, type, title, url, fileName, description } = req.body
+  const { categoryId, type, title, url, fileName, description, imageUrl } = req.body
   if (!categoryId) return res.status(400).json({ error: 'Categoria obrigatória' })
   if (!title?.trim()) return res.status(400).json({ error: 'Título obrigatório' })
   const isTool = type === 'tool'
@@ -1176,6 +1176,7 @@ app.post('/api/admin/contents', auth, adminOnly, async (req, res) => {
     url: (url || '').trim() || null,
     fileName: isTool && fileName ? String(fileName).slice(0, 200) : null,
     description: (description || '').trim().slice(0, 500) || null,
+    imageUrl: isTool ? null : ((imageUrl || '').trim() || null), // capa só pra vídeo
     position: Number(req.body.position) || 0,
   } }).catch(() => null)
   if (!content) return res.status(400).json({ error: 'Categoria inválida' })
@@ -1191,19 +1192,21 @@ app.patch('/api/admin/contents/:id', auth, adminOnly, async (req, res) => {
   if (typeof req.body.url === 'string') data.url = req.body.url.trim() || null
   if ('fileName' in req.body) data.fileName = req.body.fileName ? String(req.body.fileName).slice(0, 200) : null
   if (typeof req.body.description === 'string') data.description = req.body.description.trim().slice(0, 500) || null
+  if (typeof req.body.imageUrl === 'string') data.imageUrl = req.body.imageUrl.trim() || null
   if (req.body.type) data.type = req.body.type === 'tool' ? 'tool' : 'video'
   if ('position' in req.body) data.position = Number(req.body.position) || 0
   const content = await prisma.content.update({ where: { id: existing.id }, data }).catch(() => null)
   if (!content) return res.status(404).json({ error: 'Conteúdo não existe' })
-  // se o arquivo (url) mudou, remove o antigo do disco
+  // se o arquivo (url) ou a capa mudou, remove o antigo do disco
   if ('url' in data && existing.url !== content.url) removeUploadFile(existing.url)
+  if ('imageUrl' in data && existing.imageUrl !== content.imageUrl) removeUploadFile(existing.imageUrl)
   res.json({ content })
 })
 
 // Admin: apagar conteúdo
 app.delete('/api/admin/contents/:id', auth, adminOnly, async (req, res) => {
   const removed = await prisma.content.delete({ where: { id: Number(req.params.id) } }).catch(() => null)
-  if (removed) removeUploadFile(removed.url)
+  if (removed) { removeUploadFile(removed.url); removeUploadFile(removed.imageUrl) }
   res.json({ ok: true })
 })
 
