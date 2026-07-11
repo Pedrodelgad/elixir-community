@@ -101,6 +101,7 @@ model Category {
   parent    Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Cascade)
   children  Category[] @relation("CategoryTree")
   position  Int        @default(0)
+  imageUrl  String?    // foto/thumb da categoria (opcional) — exibida no card da Área do Aluno
   createdAt DateTime   @default(now())
   contents  Content[]
 

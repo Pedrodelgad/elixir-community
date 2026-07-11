@@ -168,6 +168,8 @@ function Node({ node, depth, onChange, index = 0, count = 1, onMoveSelf }) {
   const [addingContent, setAddingContent] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [newName, setNewName] = useState(node.name)
+  const [imgOpen, setImgOpen] = useState(false)
+  const [imgBusy, setImgBusy] = useState(false)
 
   const addCategory = async () => {
     if (!catName.trim()) return
@@ -199,6 +201,21 @@ function Node({ node, depth, onChange, index = 0, count = 1, onMoveSelf }) {
   const moveChild = async (id, dir) => {
     await api(`/api/admin/categories/${id}/move`, 'POST', { dir }); onChange()
   }
+  // Foto (thumb) da categoria: sobe o arquivo e salva no imageUrl da categoria
+  const pickCatImage = async (f) => {
+    if (!f) return
+    setImgBusy(true)
+    try {
+      const fd = new FormData(); fd.append('file', f)
+      const r = await fetch('/api/admin/upload', { method: 'POST', credentials: 'include', body: fd })
+      const j = await r.json()
+      if (!r.ok) throw new Error(j.error || 'Falha ao enviar a imagem')
+      await api(`/api/admin/categories/${node.id}`, 'PATCH', { imageUrl: j.url }); onChange()
+    } catch (e) { alert(e.message) } finally { setImgBusy(false) }
+  }
+  const removeCatImage = async () => {
+    await api(`/api/admin/categories/${node.id}`, 'PATCH', { imageUrl: '' }); onChange()
+  }
 
   return (
     <div style={{ marginLeft: depth * 16, borderLeft: depth ? '1px solid rgba(220,225,235,0.08)' : 'none', paddingLeft: depth ? 12 : 0, marginTop: 8 }}>
@@ -217,6 +234,7 @@ function Node({ node, depth, onChange, index = 0, count = 1, onMoveSelf }) {
             <button onClick={() => setAddingCat(v => !v)} title="Subcategoria" className="px-2 py-0.5 text-[11px]" style={btn('rgba(58,100,220,0.14)', 'rgba(100,150,255,0.2)', 'rgba(160,195,255,0.8)')}>+ sub</button>
             <button onClick={() => setAddingContent(v => !v)} title="Conteúdo" className="px-2 py-0.5 text-[11px]" style={btn('rgba(58,100,220,0.14)', 'rgba(100,150,255,0.2)', 'rgba(160,195,255,0.8)')}>+ conteúdo</button>
             <button onClick={() => { setRenaming(true); setNewName(node.name) }} className="px-2 py-0.5 text-[11px]" style={btn('rgba(255,255,255,0.04)', 'rgba(255,255,255,0.08)', 'rgba(200,206,218,0.5)')}>renomear</button>
+            <button onClick={() => setImgOpen(v => !v)} title="Foto da categoria" className="px-2 py-0.5 text-[11px]" style={btn(node.imageUrl ? 'rgba(58,123,213,0.18)' : 'rgba(255,255,255,0.04)', node.imageUrl ? 'rgba(122,167,255,0.35)' : 'rgba(255,255,255,0.08)', node.imageUrl ? '#A8C8FF' : 'rgba(200,206,218,0.5)')}>🖼️ capa</button>
             <button onClick={delCat} className="px-2 py-0.5 text-[11px]" style={btn('rgba(220,60,60,0.08)', 'rgba(220,80,80,0.18)', 'rgba(255,140,140,0.7)')}>apagar</button>
           </>
         )}
@@ -228,6 +246,29 @@ function Node({ node, depth, onChange, index = 0, count = 1, onMoveSelf }) {
           <input autoFocus placeholder="Nome da subcategoria" value={catName} onChange={e => setCatName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && addCategory()} style={{ ...inputStyle, padding: '5px 9px' }} />
           <button onClick={addCategory} className="px-3 py-1 text-[12px] font-semibold text-white" style={btn('linear-gradient(135deg,#2a5fc7,#5a98f0)', 'transparent', '#fff')}>Criar</button>
+        </div>
+      )}
+
+      {/* Painel: foto (thumb) da categoria */}
+      {imgOpen && (
+        <div className="flex items-center gap-3 mt-2 p-2.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(220,225,235,0.08)' }}>
+          {node.imageUrl ? (
+            <div className="rounded-md overflow-hidden flex-shrink-0" style={{ width: 84, height: 84, border: '1px solid rgba(122,167,255,0.25)' }}>
+              <img src={node.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            </div>
+          ) : (
+            <div className="rounded-md flex items-center justify-center flex-shrink-0" style={{ width: 84, height: 84, background: 'rgba(58,123,213,0.1)', border: '1px dashed rgba(122,167,255,0.3)' }}>
+              <img src="/imgs/logo3d.png" alt="" style={{ width: 40, height: 40, objectFit: 'contain', opacity: 0.6 }} />
+            </div>
+          )}
+          <div className="flex flex-col gap-1.5">
+            <label className="px-3 py-1.5 text-[11px] font-semibold inline-flex cursor-pointer" style={btn('rgba(58,100,220,0.14)', 'rgba(100,150,255,0.2)', 'rgba(160,195,255,0.85)')}>
+              <input type="file" accept="image/*" className="hidden" onChange={e => pickCatImage(e.target.files?.[0] || null)} />
+              {imgBusy ? 'enviando…' : (node.imageUrl ? 'Trocar foto' : 'Escolher foto')}
+            </label>
+            {node.imageUrl && <button onClick={removeCatImage} className="px-3 py-1.5 text-[11px]" style={btn('rgba(220,60,60,0.06)', 'rgba(220,80,80,0.15)', 'rgba(255,140,140,0.6)')}>Remover foto</button>}
+            <span className="text-[10px]" style={{ color: 'rgba(200,206,218,0.4)' }}>Aparece como thumb do card na Área do Aluno.</span>
+          </div>
         </div>
       )}
 

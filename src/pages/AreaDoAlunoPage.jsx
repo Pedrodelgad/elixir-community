@@ -161,14 +161,16 @@ function CategoryBlock({ node, depth = 0, onPlay }) {
 }
 
 /* ─── Folder card (ícone = logo Elixir) — usado por seções e tópicos ─── */
-function FolderCard({ name, count, onOpen }) {
+function FolderCard({ name, count, onOpen, imageUrl }) {
   return (
     <button onClick={onOpen}
       className="group flex flex-col items-center text-center rounded-2xl p-6 transition-all hover:-translate-y-1"
       style={{ background: 'linear-gradient(155deg, #0e1a3c 0%, #0a1230 70%, #070d24 100%)', border: '1px solid rgba(122,167,255,0.18)', boxShadow: '0 8px 28px rgba(8,20,80,0.4)', cursor: 'pointer' }}>
-      <div className="w-20 h-20 rounded-2xl flex items-center justify-center mb-4 transition-transform group-hover:scale-105"
+      <div className="w-20 h-20 rounded-2xl flex items-center justify-center mb-4 overflow-hidden transition-transform group-hover:scale-105"
         style={{ background: 'rgba(58,123,213,0.10)', border: '1px solid rgba(122,167,255,0.18)' }}>
-        <img src="/imgs/logo3d.png" alt="" className="w-14 h-14 object-contain" style={{ filter: 'drop-shadow(0 4px 12px rgba(58,123,213,0.5))' }} />
+        {imageUrl
+          ? <img src={imageUrl} alt="" className="w-full h-full object-cover" />
+          : <img src="/imgs/logo3d.png" alt="" className="w-14 h-14 object-contain" style={{ filter: 'drop-shadow(0 4px 12px rgba(58,123,213,0.5))' }} />}
       </div>
       <p className="text-[15px] font-bold leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#EEF2FF' }}>{name}</p>
       <span className="text-[11px] mt-1" style={{ color: 'rgba(190,210,235,0.45)', fontFamily: "'Inter', sans-serif" }}>{count} {count === 1 ? 'item' : 'itens'}</span>
@@ -265,7 +267,7 @@ export default function AreaDoAlunoPage() {
             /* ── Grade de folders (ícone = logo Elixir) ── */
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
               {tree.map(s => (
-                <FolderCard key={s.id} name={s.name} count={countItems(s)}
+                <FolderCard key={s.id} name={s.name} count={countItems(s)} imageUrl={s.imageUrl}
                   onOpen={() => { setOpenSection(s.id); setChainId(null); setOpenTopic(null) }} />
               ))}
             </div>
@@ -312,7 +314,7 @@ export default function AreaDoAlunoPage() {
                   {topics.length > 0 ? (
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                       {topics.map(t => (
-                        <FolderCard key={t.id} name={t.name} count={countItems(t)} onOpen={() => setOpenTopic(t.id)} />
+                        <FolderCard key={t.id} name={t.name} count={countItems(t)} imageUrl={t.imageUrl} onOpen={() => setOpenTopic(t.id)} />
                       ))}
                     </div>
                   ) : (directContents.length === 0 && (

@@ -1458,7 +1458,7 @@ async function buildTree(includeVideoUrl = false) {
     prisma.category.findMany({ orderBy: [{ position: 'asc' }, { id: 'asc' }] }),
     prisma.content.findMany({ orderBy: [{ position: 'asc' }, { id: 'asc' }] }),
   ])
-  const byId = new Map(cats.map(c => [c.id, { id: c.id, name: c.name, parentId: c.parentId, position: c.position, children: [], contents: [] }]))
+  const byId = new Map(cats.map(c => [c.id, { id: c.id, name: c.name, parentId: c.parentId, position: c.position, imageUrl: c.imageUrl, children: [], contents: [] }]))
   for (const ct of contents) {
     const node = byId.get(ct.categoryId)
     if (!node) continue
@@ -1508,13 +1508,18 @@ app.post('/api/admin/categories', auth, adminOnly, async (req, res) => {
   res.json({ category: cat })
 })
 
-// Admin: renomear categoria
+// Admin: renomear categoria / definir a foto (thumb)
 app.patch('/api/admin/categories/:id', auth, adminOnly, async (req, res) => {
+  const id = Number(req.params.id)
   const data = {}
   if (typeof req.body.name === 'string' && req.body.name.trim()) data.name = req.body.name.trim().slice(0, 60)
   if ('position' in req.body) data.position = Number(req.body.position) || 0
-  const cat = await prisma.category.update({ where: { id: Number(req.params.id) }, data }).catch(() => null)
+  if (typeof req.body.imageUrl === 'string') data.imageUrl = req.body.imageUrl.trim() || null
+  // se a foto vai mudar, apaga o arquivo antigo (best-effort)
+  const existing = 'imageUrl' in data ? await prisma.category.findUnique({ where: { id } }) : null
+  const cat = await prisma.category.update({ where: { id }, data }).catch(() => null)
   if (!cat) return res.status(404).json({ error: 'Categoria não existe' })
+  if (existing && existing.imageUrl && existing.imageUrl !== cat.imageUrl) removeUploadFile(existing.imageUrl)
   res.json({ category: cat })
 })
 
