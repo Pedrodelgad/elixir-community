@@ -4,52 +4,100 @@ import { useAuth } from '../context/AuthContext'
 import LoginModal from '../components/LoginModal'
 import SecureVideo from '../components/SecureVideo'
 
-/* ─── Card de vídeo (toca embutido; o link/ID só é buscado no play) ─── */
-function VideoCard({ c }) {
-  const [video, setVideo] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [err, setErr] = useState(false)
-
-  const play = async () => {
-    if (video || loading) return
-    setLoading(true); setErr(false)
-    try {
-      const r = await fetch(`/api/student/video/${c.id}`, { credentials: 'include' })
-      const j = await r.json()
-      if (r.ok && (j.videoId || j.src)) setVideo(j); else setErr(true)
-    } catch { setErr(true) } finally { setLoading(false) }
-  }
-
+/* ─── Card de vídeo (clique abre o player em tela cheia) ─── */
+function VideoCard({ c, onPlay }) {
   return (
     <div className="group flex flex-col rounded-2xl overflow-hidden transition-all" onContextMenu={e => e.preventDefault()}
       style={{ background: 'linear-gradient(155deg, #0e1a3c 0%, #0a1230 70%, #070d24 100%)', border: '1px solid rgba(122,167,255,0.18)', boxShadow: '0 8px 28px rgba(8,20,80,0.4)' }}>
-      <div className="relative" style={{ aspectRatio: '16/9', background: 'radial-gradient(ellipse at center, rgba(58,123,213,0.25) 0%, rgba(10,18,48,0.6) 70%)' }}>
-        {video ? (
-          video.youtube
+      <button onClick={() => onPlay(c)} aria-label={`Assistir ${c.title}`}
+        className="relative block w-full" style={{ aspectRatio: '16/9', padding: 0, border: 'none', cursor: 'pointer', background: 'radial-gradient(ellipse at center, rgba(58,123,213,0.25) 0%, rgba(10,18,48,0.6) 70%)' }}>
+        {c.imageUrl && <img src={c.imageUrl} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ zIndex: 0 }} />}
+        {c.imageUrl && <div className="absolute inset-0" style={{ background: 'rgba(6,10,26,0.35)', zIndex: 1 }} />}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-full flex items-center justify-center transition-transform group-hover:scale-110" style={{ background: 'rgba(58,123,213,0.4)', border: '1px solid rgba(122,167,255,0.5)', zIndex: 2 }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M8 5v14l11-7-11-7z" fill="#cfe0ff"/></svg>
+          </div>
+        </div>
+      </button>
+      <div className="p-4">
+        <p className="text-[13px] font-semibold leading-snug" style={{ color: '#EEF2FF', fontFamily: "'Inter', sans-serif" }}>{c.title}</p>
+        {c.description && <p className="text-[11px] mt-1.5" style={{ color: 'rgba(190,210,235,0.45)', fontFamily: "'Inter', sans-serif", display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{c.description}</p>}
+      </div>
+    </div>
+  )
+}
+
+/* ─── Player em tela cheia: vídeo grande em cima, título + descrição embaixo ─── */
+function VideoPlayerOverlay({ content, onClose }) {
+  const [video, setVideo] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState(false)
+
+  // Busca o link/ID do vídeo ao abrir
+  useEffect(() => {
+    let alive = true
+    setLoading(true); setErr(false); setVideo(null)
+    fetch(`/api/student/video/${content.id}`, { credentials: 'include' })
+      .then(r => r.json().then(j => { if (!r.ok) throw new Error(); return j }))
+      .then(j => { if (!alive) return; if (j.videoId || j.src) setVideo(j); else setErr(true) })
+      .catch(() => { if (alive) setErr(true) })
+      .finally(() => { if (alive) setLoading(false) })
+    return () => { alive = false }
+  }, [content.id])
+
+  // Esc fecha + trava o scroll do fundo enquanto aberto
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev }
+  }, [onClose])
+
+  return (
+    <div onClick={onClose} onContextMenu={e => e.preventDefault()}
+      style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(2,4,12,0.88)', backdropFilter: 'blur(12px)', overflowY: 'auto', padding: '40px 16px' }}>
+      <div onClick={e => e.stopPropagation()} className="w-full" style={{ maxWidth: 960, margin: '0 auto' }}>
+        {/* Fechar */}
+        <div className="flex justify-end mb-3">
+          <button onClick={onClose} aria-label="Fechar"
+            className="inline-flex items-center gap-2 text-[13px] font-medium px-3.5 py-2 rounded-xl transition-all hover:brightness-125"
+            style={{ color: 'rgba(200,220,255,0.85)', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+            Fechar ✕
+          </button>
+        </div>
+
+        {/* Player 16:9 grande */}
+        <div className="relative rounded-2xl overflow-hidden" onContextMenu={e => e.preventDefault()}
+          style={{ aspectRatio: '16/9', background: '#05070f', border: '1px solid rgba(122,167,255,0.18)', boxShadow: '0 24px 70px rgba(0,0,0,0.6)' }}>
+          {loading && !err && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-full animate-spin" style={{ border: '3px solid rgba(207,224,255,0.25)', borderTopColor: '#cfe0ff' }} />
+            </div>
+          )}
+          {err && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <p className="text-[13px]" style={{ color: 'rgba(255,160,160,0.85)', fontFamily: "'Inter', sans-serif" }}>Não foi possível carregar o vídeo.</p>
+            </div>
+          )}
+          {video && (video.youtube
             ? <SecureVideo videoId={video.videoId} />
             : (
               <>
-                <iframe src={video.src} title={c.title} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen
+                <iframe src={video.src} title={content.title} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen
                   style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }} />
                 <div onContextMenu={e => e.preventDefault()} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 64, zIndex: 2 }} />
               </>
-            )
-        ) : (
-          <button onClick={play} aria-label="Assistir" className="absolute inset-0 flex items-center justify-center" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
-            {c.imageUrl && <img src={c.imageUrl} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ zIndex: 0 }} />}
-            {c.imageUrl && <div className="absolute inset-0" style={{ background: 'rgba(6,10,26,0.35)', zIndex: 1 }} />}
-            <div className="relative w-12 h-12 rounded-full flex items-center justify-center transition-transform group-hover:scale-110" style={{ background: 'rgba(58,123,213,0.4)', border: '1px solid rgba(122,167,255,0.5)', zIndex: 2 }}>
-              {loading
-                ? <div className="w-4 h-4 rounded-full animate-spin" style={{ border: '2px solid rgba(207,224,255,0.3)', borderTopColor: '#cfe0ff' }} />
-                : <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M8 5v14l11-7-11-7z" fill="#cfe0ff"/></svg>}
-            </div>
-          </button>
-        )}
-      </div>
-      <div className="p-4">
-        <p className="text-[13px] font-semibold leading-snug" style={{ color: '#EEF2FF', fontFamily: "'Inter', sans-serif" }}>{c.title}</p>
-        {err && <p className="text-[11px] mt-1" style={{ color: 'rgba(255,150,150,0.7)' }}>Não foi possível carregar o vídeo.</p>}
-        {c.description && <p className="text-[11px] mt-1.5" style={{ color: 'rgba(190,210,235,0.45)', fontFamily: "'Inter', sans-serif" }}>{c.description}</p>}
+            ))}
+        </div>
+
+        {/* Título + descrição abaixo */}
+        <div className="mt-5">
+          <h2 className="font-bold leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#EEF2FF', fontSize: 'clamp(19px, 3vw, 25px)' }}>{content.title}</h2>
+          {content.description && (
+            <p className="text-[14px] leading-relaxed mt-3" style={{ color: 'rgba(200,216,240,0.72)', fontFamily: "'Inter', sans-serif", whiteSpace: 'pre-line' }}>{content.description}</p>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -81,7 +129,7 @@ function ToolRow({ c }) {
 }
 
 /* ─── Bloco recursivo: conteúdos da categoria + subcategorias (tópicos) ─── */
-function CategoryBlock({ node, depth = 0 }) {
+function CategoryBlock({ node, depth = 0, onPlay }) {
   const videos = node.contents.filter(c => c.type === 'video')
   const tools = node.contents.filter(c => c.type === 'tool')
   const hasAny = videos.length || tools.length || node.children.length
@@ -96,7 +144,7 @@ function CategoryBlock({ node, depth = 0 }) {
       )}
       {videos.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-          {videos.map(c => <VideoCard key={c.id} c={c} />)}
+          {videos.map(c => <VideoCard key={c.id} c={c} onPlay={onPlay} />)}
         </div>
       )}
       {tools.length > 0 && (
@@ -104,7 +152,7 @@ function CategoryBlock({ node, depth = 0 }) {
           {tools.map(c => <ToolRow key={c.id} c={c} />)}
         </div>
       )}
-      {node.children.map(child => <CategoryBlock key={child.id} node={child} depth={depth + 1} />)}
+      {node.children.map(child => <CategoryBlock key={child.id} node={child} depth={depth + 1} onPlay={onPlay} />)}
       {!hasAny && depth > 0 && (
         <p className="text-[12px]" style={{ color: 'rgba(190,210,235,0.35)', fontFamily: "'Inter', sans-serif" }}>Em breve.</p>
       )}
@@ -136,6 +184,7 @@ export default function AreaDoAlunoPage() {
   const [chainId, setChainId] = useState(null)
   const [openTopic, setOpenTopic] = useState(null)     // folder de tópico aberto (dentro da seção)
   const [loginOpen, setLoginOpen] = useState(false)
+  const [watching, setWatching] = useState(null)       // vídeo aberto no player em tela cheia
 
   const isAlpha = user?.plan === 'alpha'
 
@@ -257,7 +306,7 @@ export default function AreaDoAlunoPage() {
                   )}
 
                   {/* Conteúdo solto (vídeos/ferramentas fora de tópico) */}
-                  {directContents.length > 0 && <div className="mb-4"><CategoryBlock node={{ ...activeNode, children: [] }} depth={0} /></div>}
+                  {directContents.length > 0 && <div className="mb-4"><CategoryBlock node={{ ...activeNode, children: [] }} depth={0} onPlay={setWatching} /></div>}
 
                   {/* Folders de tópico */}
                   {topics.length > 0 ? (
@@ -273,13 +322,15 @@ export default function AreaDoAlunoPage() {
               ) : (
                 /* ── Tópico aberto: o conteúdo ── */
                 (openTopicNode.contents.length || openTopicNode.children.length)
-                  ? <CategoryBlock node={openTopicNode} depth={0} />
+                  ? <CategoryBlock node={openTopicNode} depth={0} onPlay={setWatching} />
                   : <p className="text-center text-[13px] py-16" style={{ color: 'rgba(190,210,235,0.4)', fontFamily: "'Inter', sans-serif" }}>Nenhum conteúdo neste tópico ainda.</p>
               )}
             </>
           )
         )}
       </div>
+
+      {watching && <VideoPlayerOverlay content={watching} onClose={() => setWatching(null)} />}
 
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} redirect="/area-do-aluno" />
     </div>
