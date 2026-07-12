@@ -124,6 +124,9 @@ if (!IS_PROD) {
 // ── Afiliados (próprio): constantes/helpers de link ──
 const AFFILIATE_RATE = 0.30 // 30% padrão de comissão
 const MIN_PAYOUT_BRL = 5000 // saque mínimo: R$ 50,00 (centavos) — ajuste numa linha só
+// Afiliado "da casa": recebe quem entra SEM link de indicação (organic). Override opcional por env;
+// se vazio, cai automaticamente pro admin que for afiliado (a sua conta). Não afeta os outros afiliados.
+const HOUSE_REF_CODE = (process.env.HOUSE_REF_CODE || '').trim().toLowerCase() || null
 const affiliateBase = () => process.env.CORS_ORIGIN || 'https://elixiralpha.com'
 const affiliateLink = (code) => `${affiliateBase()}/?ref=${code}`
 const refCodeFrom = (h) => (h || 'user').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 24) || 'user'
@@ -973,12 +976,19 @@ async function ensureWithdrawKey(userId) {
   }
 }
 
-// Atribuição: lê o cookie elx_ref e marca quem indicou este usuário (last-click, trava auto-indicação)
+// Atribuição: lê o cookie elx_ref e marca quem indicou este usuário (last-click, trava auto-indicação).
+// Sem indicação válida → cai pro afiliado "da casa" (HOUSE_REF_CODE), sem atrapalhar os outros afiliados.
 async function applyReferral(user, req) {
   try {
     const code = String(req.cookies?.elx_ref || '').trim().toLowerCase()
-    if (!code) return
-    const ref = await prisma.user.findUnique({ where: { refCode: code } })
+    let ref = code ? await prisma.user.findUnique({ where: { refCode: code } }) : null
+    // Só usa a casa quando NÃO veio de um link de afiliado válido (organic).
+    // Override por HOUSE_REF_CODE; senão, o admin que for afiliado (menor id).
+    if (!ref) {
+      ref = HOUSE_REF_CODE
+        ? await prisma.user.findUnique({ where: { refCode: HOUSE_REF_CODE } })
+        : await prisma.user.findFirst({ where: { role: 'admin', refCode: { not: null } }, orderBy: { id: 'asc' } })
+    }
     if (!ref || ref.id === user.id) return   // não existe ou é a própria pessoa
     if (ref.email === user.email) return      // mesmo e-mail = auto-indicação
     await prisma.user.update({ where: { id: user.id }, data: { referredById: ref.id } })
