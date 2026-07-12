@@ -255,11 +255,11 @@ function Node({ node, depth, onChange, index = 0, count = 1, onMoveSelf }) {
       {imgOpen && (
         <div className="flex items-center gap-3 mt-2 p-2.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(220,225,235,0.08)' }}>
           {node.imageUrl ? (
-            <div className="rounded-md overflow-hidden flex-shrink-0" style={{ width: 84, height: 84, border: '1px solid rgba(122,167,255,0.25)' }}>
+            <div className="rounded-md overflow-hidden flex-shrink-0" style={{ width: 150, aspectRatio: '16/9', border: '1px solid rgba(122,167,255,0.25)' }}>
               <img src={node.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             </div>
           ) : (
-            <div className="rounded-md flex items-center justify-center flex-shrink-0" style={{ width: 84, height: 84, background: 'rgba(58,123,213,0.1)', border: '1px dashed rgba(122,167,255,0.3)' }}>
+            <div className="rounded-md flex items-center justify-center flex-shrink-0" style={{ width: 150, aspectRatio: '16/9', background: 'rgba(58,123,213,0.1)', border: '1px dashed rgba(122,167,255,0.3)' }}>
               <img src="/imgs/logo3d.png" alt="" style={{ width: 40, height: 40, objectFit: 'contain', opacity: 0.6 }} />
             </div>
           )}
@@ -269,7 +269,7 @@ function Node({ node, depth, onChange, index = 0, count = 1, onMoveSelf }) {
               {imgBusy ? 'enviando…' : (node.imageUrl ? 'Trocar foto' : 'Escolher foto')}
             </label>
             {node.imageUrl && <button onClick={removeCatImage} className="px-3 py-1.5 text-[11px]" style={btn('rgba(220,60,60,0.06)', 'rgba(220,80,80,0.15)', 'rgba(255,140,140,0.6)')}>Remover foto</button>}
-            <span className="text-[10px]" style={{ color: 'rgba(200,206,218,0.4)' }}>Aparece como thumb do card na Área do Aluno.</span>
+            <span className="text-[10px]" style={{ color: 'rgba(200,206,218,0.4)' }}>Banner 16:9 no card da Área do Aluno (use imagem 16:9 pra não cortar).</span>
           </div>
         </div>
       )}

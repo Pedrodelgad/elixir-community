@@ -174,16 +174,20 @@ function CategoryBlock({ node, depth = 0, onPlay }) {
 function FolderCard({ name, count, onOpen, imageUrl }) {
   return (
     <button onClick={onOpen}
-      className="group flex flex-col items-center text-center rounded-2xl p-6 transition-all hover:-translate-y-1"
+      className="group flex flex-col text-left rounded-2xl overflow-hidden transition-all hover:-translate-y-1"
       style={{ background: 'linear-gradient(155deg, #0e1a3c 0%, #0a1230 70%, #070d24 100%)', border: '1px solid rgba(122,167,255,0.18)', boxShadow: '0 8px 28px rgba(8,20,80,0.4)', cursor: 'pointer' }}>
-      <div className="w-20 h-20 rounded-2xl flex items-center justify-center mb-4 overflow-hidden transition-transform group-hover:scale-105"
-        style={{ background: 'rgba(58,123,213,0.10)', border: '1px solid rgba(122,167,255,0.18)' }}>
+      {/* Banner 16:9 — a foto preenche tudo; sem foto, o logo centralizado */}
+      <div className="relative w-full overflow-hidden" style={{ aspectRatio: '16/9', background: 'radial-gradient(ellipse at center, rgba(58,123,213,0.18) 0%, rgba(10,18,48,0.5) 70%)' }}>
         {imageUrl
-          ? <img src={imageUrl} alt="" className="w-full h-full object-cover" />
-          : <img src="/imgs/logo3d.png" alt="" className="w-14 h-14 object-contain" style={{ filter: 'drop-shadow(0 4px 12px rgba(58,123,213,0.5))' }} />}
+          ? <img src={imageUrl} alt="" className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-105" />
+          : <div className="absolute inset-0 flex items-center justify-center">
+              <img src="/imgs/logo3d.png" alt="" className="w-14 h-14 object-contain" style={{ filter: 'drop-shadow(0 4px 12px rgba(58,123,213,0.5))', opacity: 0.85 }} />
+            </div>}
       </div>
-      <p className="text-[15px] font-bold leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#EEF2FF' }}>{name}</p>
-      <span className="text-[11px] mt-1" style={{ color: 'rgba(190,210,235,0.45)', fontFamily: "'Inter', sans-serif" }}>{count} {count === 1 ? 'item' : 'itens'}</span>
+      <div className="p-4">
+        <p className="text-[15px] font-bold leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#EEF2FF' }}>{name}</p>
+        <span className="text-[11px] mt-1 block" style={{ color: 'rgba(190,210,235,0.45)', fontFamily: "'Inter', sans-serif" }}>{count} {count === 1 ? 'item' : 'itens'}</span>
+      </div>
     </button>
   )
 }
