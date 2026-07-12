@@ -4,6 +4,16 @@ import { useAuth } from '../context/AuthContext'
 import LoginModal from '../components/LoginModal'
 import SecureVideo from '../components/SecureVideo'
 
+// Transforma URLs do texto em links clicáveis (as quebras de linha vêm do white-space: pre-line)
+function renderRichText(text) {
+  if (!text) return null
+  return String(text).split(/(https?:\/\/[^\s]+)/g).map((part, i) =>
+    /^https?:\/\//.test(part)
+      ? <a key={i} href={part} target="_blank" rel="noopener noreferrer" style={{ color: '#7AA7FF', textDecoration: 'underline', wordBreak: 'break-word' }}>{part}</a>
+      : part
+  )
+}
+
 /* ─── Card de vídeo (clique abre o player em tela cheia) ─── */
 function VideoCard({ c, onPlay }) {
   return (
@@ -95,7 +105,7 @@ function VideoPlayerOverlay({ content, onClose }) {
         <div className="mt-5">
           <h2 className="font-bold leading-tight" style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#EEF2FF', fontSize: 'clamp(19px, 3vw, 25px)' }}>{content.title}</h2>
           {content.description && (
-            <p className="text-[14px] leading-relaxed mt-3" style={{ color: 'rgba(200,216,240,0.72)', fontFamily: "'Inter', sans-serif", whiteSpace: 'pre-line' }}>{content.description}</p>
+            <p className="text-[14px] leading-relaxed mt-3" style={{ color: 'rgba(200,216,240,0.72)', fontFamily: "'Inter', sans-serif", whiteSpace: 'pre-line' }}>{renderRichText(content.description)}</p>
           )}
         </div>
       </div>

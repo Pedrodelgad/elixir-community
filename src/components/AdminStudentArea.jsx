@@ -91,7 +91,9 @@ function ContentForm({ onSubmit, onCancel, initial, submitLabel = 'Adicionar' })
 
       {/* 1) Título · 2) Descrição · 3) só então o vídeo/arquivo (mais fácil de organizar) */}
       <input placeholder="Título" value={title} onChange={e => setTitle(e.target.value)} style={inputStyle} />
-      <input placeholder="Descrição (opcional)" value={desc} onChange={e => setDesc(e.target.value)} style={inputStyle} />
+      <textarea placeholder="Descrição (opcional) — pode usar várias linhas, espaçamento e colar links (viram clicáveis)"
+        value={desc} onChange={e => setDesc(e.target.value)} rows={3}
+        style={{ ...inputStyle, resize: 'vertical', minHeight: 64, lineHeight: 1.5 }} />
 
       {isTool ? (
         <div className="flex flex-col gap-1.5">
