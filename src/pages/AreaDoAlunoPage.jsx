@@ -295,8 +295,7 @@ export default function AreaDoAlunoPage() {
                   style={{ color: 'rgba(160,195,255,0.85)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
                   ← Voltar
                 </button>
-                <div className="flex items-center gap-2.5">
-                  <img src="/imgs/logo3d.png" alt="" className="w-7 h-7 object-contain" />
+                <div className="flex items-center">
                   <h2 className="text-[20px] font-bold" style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#EEF2FF' }}>{openTopicNode ? openTopicNode.name : section?.name}</h2>
                 </div>
               </div>
