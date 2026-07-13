@@ -1569,7 +1569,7 @@ app.post('/api/admin/contents', auth, adminOnly, async (req, res) => {
     title: title.trim().slice(0, 120),
     url: (url || '').trim() || null,
     fileName: isTool && fileName ? String(fileName).slice(0, 200) : null,
-    description: (description || '').trim().slice(0, 500) || null,
+    description: (description || '').trim().slice(0, 10000) || null,
     imageUrl: isTool ? null : ((imageUrl || '').trim() || null), // capa só pra vídeo
     position: Number(req.body.position) || 0,
   } }).catch(() => null)
@@ -1585,7 +1585,7 @@ app.patch('/api/admin/contents/:id', auth, adminOnly, async (req, res) => {
   if (typeof req.body.title === 'string' && req.body.title.trim()) data.title = req.body.title.trim().slice(0, 120)
   if (typeof req.body.url === 'string') data.url = req.body.url.trim() || null
   if ('fileName' in req.body) data.fileName = req.body.fileName ? String(req.body.fileName).slice(0, 200) : null
-  if (typeof req.body.description === 'string') data.description = req.body.description.trim().slice(0, 500) || null
+  if (typeof req.body.description === 'string') data.description = req.body.description.trim().slice(0, 10000) || null
   if (typeof req.body.imageUrl === 'string') data.imageUrl = req.body.imageUrl.trim() || null
   if (req.body.type) data.type = req.body.type === 'tool' ? 'tool' : 'video'
   if ('position' in req.body) data.position = Number(req.body.position) || 0
