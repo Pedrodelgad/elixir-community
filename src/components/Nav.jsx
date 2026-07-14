@@ -11,7 +11,7 @@ const PLAN_CONFIG = {
 
 // Links de navegação — aparecem inline no header (desktop) e dentro do menu (mobile)
 const NAV_LINKS = [
-  { label: 'Comunidade', href: '#comunidade' },
+  { label: 'Comunidade', href: '/#comunidade' },
   { label: 'Área do Aluno', to: '/area-do-aluno' },
   { label: 'Planos', to: '/planos' },
   { label: 'Afiliados', to: '/afiliado' },

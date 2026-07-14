@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import LoginModal from '../components/LoginModal'
+import Nav from '../components/Nav'
 
 function fmtMoney(cents, currency = 'BRL') {
   try {
@@ -249,26 +250,8 @@ export default function AffiliatePage() {
       <div style={{ position: 'absolute', top: '-20%', left: '53.2%', width: '22px', height: '160%', background: 'linear-gradient(180deg, rgba(200,180,255,0.48) 0%, rgba(167,139,250,0.30) 30%, rgba(140,100,230,0.14) 60%, transparent 90%)', transform: 'rotate(-28deg)', transformOrigin: 'top center', filter: 'blur(5px)', pointerEvents: 'none' }}/>
       <div style={{ position: 'absolute', top: '-20%', left: '54.2%', width: '3px', height: '160%', background: 'linear-gradient(180deg, rgba(230,220,255,0.75) 0%, rgba(200,180,255,0.50) 25%, rgba(167,139,250,0.25) 55%, transparent 85%)', transform: 'rotate(-28deg)', transformOrigin: 'top center', filter: 'blur(1px)', pointerEvents: 'none' }}/>
 
-      {/* Nav */}
-      <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-10"
-        style={{
-          height: '64px',
-          background: 'linear-gradient(180deg, rgba(10,6,24,0.82) 0%, rgba(8,5,20,0.7) 100%)',
-          backdropFilter: 'blur(24px) saturate(180%)',
-          borderBottom: '1px solid rgba(140,110,255,0.10)',
-        }}>
-        <Link to="/" className="flex items-center">
-          <img src="/imgs/elixir_logo2.png" alt="Elixir" className="h-8 hover:brightness-125 transition-all" />
-        </Link>
-        <div className="flex items-center gap-4">
-          <Link to="/" className="text-[12px] font-medium tracking-[2px] uppercase" style={{ color: 'rgba(203,213,225,0.55)', fontFamily: "'Inter', sans-serif" }}>
-            Voltar
-          </Link>
-          {user && (
-            <span className="text-sm font-medium" style={{ color: 'rgba(200,190,235,0.6)', fontFamily: "'Inter', sans-serif" }}>{user.name}</span>
-          )}
-        </div>
-      </nav>
+      {/* Nav (barra completa, igual em todas as páginas) */}
+      <Nav onLoginRequest={() => setLoginOpen(true)} />
 
       <div className="relative z-10 pt-28 pb-24 px-6 md:px-12 max-w-[1100px] mx-auto">
         {/* Header */}

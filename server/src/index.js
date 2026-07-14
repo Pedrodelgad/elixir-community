@@ -775,7 +775,7 @@ app.post('/api/checkout', auth, payLimiter, async (req, res) => {
   const productName = `Elixir ${plan.name} — ${plan.badge}`
 
   const params = {
-    success_url: `${base}/planos?checkout=success`,
+    success_url: `${base}/area-do-aluno?checkout=success`,
     cancel_url: `${base}/planos?checkout=cancel`,
     customer_email: req.user.email,
     metadata: { userId: String(req.user.id), planId: plan.id },

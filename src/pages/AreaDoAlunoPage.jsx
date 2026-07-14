@@ -1,8 +1,56 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import LoginModal from '../components/LoginModal'
 import SecureVideo from '../components/SecureVideo'
+import Nav from '../components/Nav'
+
+// Ícone do Discord
+function DiscordIcon() {
+  return (
+    <svg width="16" height="12" viewBox="0 0 71 55" fill="currentColor" style={{ flexShrink: 0 }}>
+      <path d="M60.1 4.9A58.5 58.5 0 0 0 45.5.9a40 40 0 0 0-1.8 3.7 54 54 0 0 0-16.4 0A38 38 0 0 0 25.5.9 58.3 58.3 0 0 0 10.9 5C1.6 18.9-.9 32.4.3 45.7a58.9 58.9 0 0 0 18 9.1 43 43 0 0 0 3.7-6.1 38.3 38.3 0 0 1-6-2.9l1.5-1.1a42 42 0 0 0 36 0l1.5 1.1a38.2 38.2 0 0 1-6 2.9 43 43 0 0 0 3.7 6.1 58.7 58.7 0 0 0 18-9.1c1.5-15.4-2.6-28.8-10.5-40.8zM23.8 37.5c-3.5 0-6.4-3.2-6.4-7.2s2.8-7.2 6.4-7.2 6.5 3.2 6.4 7.2c0 4-2.8 7.2-6.4 7.2zm23.4 0c-3.5 0-6.4-3.2-6.4-7.2s2.8-7.2 6.4-7.2 6.5 3.2 6.4 7.2c0 4-2.8 7.2-6.4 7.2z"/>
+    </svg>
+  )
+}
+
+// Banner "conecte o Discord" — aparece após a compra (checkout=success) e enquanto o Alpha não vinculou
+function DiscordConnectBanner({ user, checkout }) {
+  const linked = !!user?.discordLinked
+  const success = checkout === 'success'
+  const showPersistent = user?.plan === 'alpha' && !linked
+  if (!success && !showPersistent) return null
+  const connectUrl = '/api/auth/discord?redirect=' + encodeURIComponent('/area-do-aluno')
+
+  if (success && linked) {
+    return (
+      <div className="mb-8 flex items-center gap-4 px-6 py-5 rounded-2xl" style={{ background: 'linear-gradient(135deg, rgba(40,180,120,0.12), rgba(30,140,90,0.08))', border: '1px solid rgba(60,200,140,0.35)' }}>
+        <span style={{ fontSize: 22 }}>⚡</span>
+        <div>
+          <p className="text-[14px] font-bold" style={{ color: '#7defc0', fontFamily: "'Space Grotesk', sans-serif" }}>Pagamento confirmado! Alpha ativado no Discord.</p>
+          <p className="text-[12px] mt-0.5" style={{ color: 'rgba(150,230,190,0.6)', fontFamily: "'Inter', sans-serif" }}>Você recebeu uma DM com os detalhes. Aproveite os canais exclusivos.</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mb-8 flex flex-col sm:flex-row sm:items-center gap-4 px-6 py-5 rounded-2xl" style={{ background: 'rgba(88,101,242,0.10)', border: '1px solid rgba(88,101,242,0.35)', boxShadow: '0 0 28px rgba(88,101,242,0.10)' }}>
+      <div className="flex-1">
+        <p className="text-[14px] font-bold" style={{ color: 'rgba(185,195,255,0.95)', fontFamily: "'Space Grotesk', sans-serif" }}>
+          ⚡ {success ? 'Pagamento confirmado!' : 'Seu Alpha está ativo!'} Falta liberar no Discord.
+        </p>
+        <p className="text-[12px] mt-0.5" style={{ color: 'rgba(165,175,235,0.65)', fontFamily: "'Inter', sans-serif" }}>
+          Conecte sua conta do Discord para receber o cargo Alpha e a DM com o acesso aos canais.
+        </p>
+      </div>
+      <a href={connectUrl} className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-semibold text-white whitespace-nowrap transition-all hover:-translate-y-px"
+        style={{ background: 'linear-gradient(135deg, #5865F2, #4752c4)', boxShadow: '0 4px 18px rgba(88,101,242,0.4)' }}>
+        <DiscordIcon /> Conectar Discord
+      </a>
+    </div>
+  )
+}
 
 // Transforma URLs do texto em links clicáveis (as quebras de linha vêm do white-space: pre-line)
 function renderRichText(text) {
@@ -193,7 +241,7 @@ function FolderCard({ name, count, onOpen, imageUrl }) {
 }
 
 export default function AreaDoAlunoPage() {
-  const { user, loading } = useAuth()
+  const { user, loading, refresh } = useAuth()
   const [tree, setTree] = useState(null)
   const [error, setError] = useState(null)
   const [openSection, setOpenSection] = useState(null) // folder de seção aberto (null = grade)
@@ -201,6 +249,8 @@ export default function AreaDoAlunoPage() {
   const [openTopic, setOpenTopic] = useState(null)     // folder de tópico aberto (dentro da seção)
   const [loginOpen, setLoginOpen] = useState(false)
   const [watching, setWatching] = useState(null)       // vídeo aberto no player em tela cheia
+  const [params] = useSearchParams()
+  const checkout = params.get('checkout')               // 'success' logo após a compra
 
   const isAlpha = user?.plan === 'alpha'
 
@@ -211,6 +261,14 @@ export default function AreaDoAlunoPage() {
       .then(d => setTree(d.tree))
       .catch(e => setError(e.message))
   }, [isAlpha])
+
+  // Recém-comprou: o webhook libera o Alpha em segundos → recarrega o usuário até virar Alpha (destrava o conteúdo)
+  useEffect(() => {
+    if (checkout !== 'success' || isAlpha || !refresh) return
+    let n = 0
+    const id = setInterval(() => { n++; refresh(); if (n >= 8) clearInterval(id) }, 3000)
+    return () => clearInterval(id)
+  }, [checkout, isAlpha, refresh])
 
   const section = tree?.find(t => t.id === openSection) || null
   const chains = section?.children || []
@@ -227,17 +285,13 @@ export default function AreaDoAlunoPage() {
       {/* Feixe de luz diagonal */}
       <div style={{ position: 'absolute', top: '-20%', left: '50%', width: '80px', height: '160%', background: 'linear-gradient(180deg, rgba(70,130,240,0.20) 0%, rgba(40,95,190,0.08) 60%, transparent 100%)', transform: 'rotate(-28deg)', transformOrigin: 'top center', filter: 'blur(16px)', pointerEvents: 'none' }} />
 
-      {/* Nav */}
-      <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-10"
-        style={{ height: 64, background: 'linear-gradient(180deg, rgba(4,8,20,0.82) 0%, rgba(3,6,16,0.7) 100%)', backdropFilter: 'blur(24px) saturate(180%)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-        <Link to="/" className="flex items-center"><img src="/imgs/elixir_logo2.png" alt="Elixir" className="h-8 hover:brightness-125 transition-all" /></Link>
-        <div className="flex items-center gap-4">
-          <Link to="/" className="text-[12px] font-medium tracking-[2px] uppercase" style={{ color: 'rgba(203,213,225,0.55)', fontFamily: "'Inter', sans-serif" }}>Voltar</Link>
-          {user && <span className="text-sm font-medium" style={{ color: 'rgba(190,210,235,0.6)', fontFamily: "'Inter', sans-serif" }}>{user.name}</span>}
-        </div>
-      </nav>
+      {/* Nav (barra completa, igual em todas as páginas) */}
+      <Nav onLoginRequest={() => setLoginOpen(true)} />
 
       <div className="relative z-10 pt-28 pb-24 px-6 md:px-12 max-w-[1100px] mx-auto">
+        {/* Banner: conecte o Discord (pós-compra + aviso permanente do Alpha) */}
+        <DiscordConnectBanner user={user} checkout={checkout} />
+
         {/* Header */}
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-5" style={{ background: 'rgba(58,123,213,0.12)', border: '1px solid rgba(122,167,255,0.25)' }}>
