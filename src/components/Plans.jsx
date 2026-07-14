@@ -342,25 +342,7 @@ export default function Plans({ onLoginRequest }) {
           </div>
         )}
 
-        {/* Aviso PERMANENTE: é Alpha mas ainda não vinculou o Discord (não some ao atualizar) */}
-        {user?.plan === 'alpha' && !user?.discordLinked && status !== 'success' && (
-          <div className="mb-8 flex flex-col sm:flex-row sm:items-center gap-4 px-6 py-5 rounded-2xl"
-            style={{ background: 'rgba(88,101,242,0.10)', border: '1px solid rgba(88,101,242,0.35)', boxShadow: '0 0 28px rgba(88,101,242,0.10)' }}>
-            <div className="flex-1">
-              <p className="text-[14px] font-bold" style={{ color: 'rgba(185,195,255,0.95)', fontFamily: "'Space Grotesk', sans-serif" }}>
-                ⚡ Seu Alpha está ativo! Falta liberar no Discord.
-              </p>
-              <p className="text-[12px] mt-0.5" style={{ color: 'rgba(165,175,235,0.65)', fontFamily: "'Inter', sans-serif" }}>
-                Conecte sua conta do Discord para receber o cargo Alpha e a DM com o acesso aos canais.
-              </p>
-            </div>
-            <a href={'/api/auth/discord?redirect=' + encodeURIComponent('/planos')}
-              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-semibold text-white whitespace-nowrap transition-all hover:-translate-y-px"
-              style={{ background: 'linear-gradient(135deg, #5865F2, #4752c4)', boxShadow: '0 4px 18px rgba(88,101,242,0.4)' }}>
-              <DiscordIcon /> Conectar Discord
-            </a>
-          </div>
-        )}
+        {/* Aviso de conectar o Discord agora fica só na Área do Aluno (evita duplicar) */}
 
         {/* Banner: pagamento confirmado */}
         {status === 'success' && (
