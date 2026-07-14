@@ -113,6 +113,7 @@ export default function AdminPage() {
   const [comments, setComments] = useState([])
   const [stats, setStats] = useState({ revenueSol: 0, revenueBrl: 0, totalSales: 0, sales: [] })
   const [affiliates, setAffiliates] = useState([])
+  const [studentOpen, setStudentOpen] = useState(false) // Área do Aluno recolhida por padrão (menos poluição)
 
   // Busca tudo do banco: contas, comentários e estatísticas
   useEffect(() => {
@@ -305,15 +306,23 @@ export default function AdminPage() {
 
         </div>
 
-        {/* ── Área do Aluno (gestão de conteúdo) ── */}
+        {/* ── Área do Aluno (gestão de conteúdo) — recolhível ── */}
         <div className="rounded-2xl p-6" style={card}>
-          <h2 className="text-[16px] font-bold mb-1" style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#f2f4f8' }}>
-            Área do Aluno
-          </h2>
-          <p className="text-[11px] mb-4" style={{ color: 'rgba(170,176,188,0.5)', fontFamily: "'Inter', sans-serif" }}>
-            Conteúdo exclusivo dos membros Alpha — vídeos e ferramentas, organizados por seção.
-          </p>
-          <AdminStudentArea />
+          <button onClick={() => setStudentOpen(v => !v)} className="w-full flex items-center justify-between gap-3 text-left"
+            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+            <div>
+              <h2 className="text-[16px] font-bold" style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#f2f4f8' }}>
+                Área do Aluno
+              </h2>
+              <p className="text-[11px] mt-0.5" style={{ color: 'rgba(170,176,188,0.5)', fontFamily: "'Inter', sans-serif" }}>
+                Conteúdo exclusivo dos membros Alpha — vídeos e ferramentas, organizados por seção.
+              </p>
+            </div>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0, transform: studentOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+              <path d="M6 9l6 6 6-6" stroke="rgba(200,206,218,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          {studentOpen && <div className="mt-4"><AdminStudentArea /></div>}
         </div>
 
         {/* ── Afiliados (saldos — só leitura) ── */}
