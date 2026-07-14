@@ -1,14 +1,17 @@
-import React from 'react'
+import React, { Suspense, lazy } from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
-import App from './App.jsx'
-import PlansPage from './pages/PlansPage.jsx'
-import AdminPage from './pages/AdminPage.jsx'
-import AffiliatePage from './pages/AffiliatePage.jsx'
-import AreaDoAlunoPage from './pages/AreaDoAlunoPage.jsx'
-import VincularDiscordPage from './pages/VincularDiscordPage.jsx'
 import './index.css'
+
+// Cada página vira um chunk separado (code-splitting) — corta o bundle inicial.
+// O logo 3D (three.js) fica no chunk da home, então só baixa em '/'.
+const App = lazy(() => import('./App.jsx'))
+const PlansPage = lazy(() => import('./pages/PlansPage.jsx'))
+const AdminPage = lazy(() => import('./pages/AdminPage.jsx'))
+const AffiliatePage = lazy(() => import('./pages/AffiliatePage.jsx'))
+const AreaDoAlunoPage = lazy(() => import('./pages/AreaDoAlunoPage.jsx'))
+const VincularDiscordPage = lazy(() => import('./pages/VincularDiscordPage.jsx'))
 
 // Afiliados: ?ref=CODE → cookie elx_ref (60d, 1st-party) + conta o clique, e limpa a URL
 ;(() => {
@@ -29,15 +32,17 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
-          <Route path="/" element={<App />} />
-          <Route path="/planos" element={<PlansPage />} />
-          <Route path="/admin" element={<AdminPage />} />
-          <Route path="/videos" element={<Navigate to="/area-do-aluno" replace />} />
-          <Route path="/area-do-aluno" element={<AreaDoAlunoPage />} />
-          <Route path="/afiliado" element={<AffiliatePage />} />
-          <Route path="/vincular-discord" element={<VincularDiscordPage />} />
-        </Routes>
+        <Suspense fallback={<div style={{ minHeight: '100vh', background: '#020617' }} />}>
+          <Routes>
+            <Route path="/" element={<App />} />
+            <Route path="/planos" element={<PlansPage />} />
+            <Route path="/admin" element={<AdminPage />} />
+            <Route path="/videos" element={<Navigate to="/area-do-aluno" replace />} />
+            <Route path="/area-do-aluno" element={<AreaDoAlunoPage />} />
+            <Route path="/afiliado" element={<AffiliatePage />} />
+            <Route path="/vincular-discord" element={<VincularDiscordPage />} />
+          </Routes>
+        </Suspense>
       </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>,

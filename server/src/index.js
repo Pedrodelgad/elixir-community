@@ -63,9 +63,25 @@ if (IS_PROD && (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'troque-is
 // Atrás do Nginx em produção: confia no X-Forwarded-* (necessário p/ rate-limit por IP e cookie secure)
 app.set('trust proxy', 1)
 
-// Headers de segurança (anti-clickjacking, noSniff, HSTS…). CSP fica desativado por ora
-// para não quebrar o front (fontes, Rewardful, Stripe, 3D) — configurar um CSP sob medida depois.
-app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }))
+// Headers de segurança + CSP sob medida. O ganho principal é script-src SEM 'unsafe-inline'
+// (o build não tem script inline), travando XSS. As fontes externas conhecidas estão liberadas:
+// Google Fonts, YouTube (player), cdn.jsdelivr (HDR do logo 3D via drei). blob/wasm p/ three.js.
+app.use(helmet({
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      scriptSrc: ["'self'", "'wasm-unsafe-eval'", 'blob:', 'https://www.youtube.com', 'https://s.ytimg.com'],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+      imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+      mediaSrc: ["'self'", 'blob:', 'https:'],
+      frameSrc: ["'self'", 'https://www.youtube.com', 'https://www.youtube-nocookie.com', 'https:'],
+      connectSrc: ["'self'", 'https://cdn.jsdelivr.net', 'https://www.youtube.com', 'https://s.ytimg.com'],
+      workerSrc: ["'self'", 'blob:'],
+    },
+  },
+}))
 
 // Webhook da Stripe precisa do corpo RAW (a assinatura é verificada sobre os bytes originais).
 // Por isso é registrado ANTES do express.json(). stripeWebhook é hoisted (function declaration).
