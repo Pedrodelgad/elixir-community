@@ -33,10 +33,24 @@ function ClearBg() {
 // ── Modelo 3D ─────────────────────────────────────────────────────
 function Model({ mousePos, phaseRef }) {
   const { scene } = useGLTF('/imgs/logo3d.glb')
+  const { gl } = useThree()
   const modelRef = useRef()
   const speedRef = useRef(0.003)
   const tiltX    = useRef(0)
   const tiltZ    = useRef(0)
+
+  // Centro do canvas cacheado. getBoundingClientRect() todo frame força reflow (layout thrashing);
+  // a posição só muda no resize, então calcula uma vez + em resize.
+  const centerRef = useRef({ cx: window.innerWidth / 2, cy: window.innerHeight / 2 })
+  useEffect(() => {
+    const update = () => {
+      const r = gl.domElement.getBoundingClientRect()
+      centerRef.current = { cx: r.left + r.width / 2, cy: r.top + r.height / 2 }
+    }
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [gl])
 
   useEffect(() => {
     // Ajusta materiais para visual premium
@@ -65,10 +79,7 @@ function Model({ mousePos, phaseRef }) {
     if (!modelRef.current) return
     if (phaseRef.current === 'done') return
 
-    const canvas = state.gl.domElement
-    const rect   = canvas.getBoundingClientRect()
-    const cx = rect.left + rect.width  / 2
-    const cy = rect.top  + rect.height / 2
+    const { cx, cy } = centerRef.current
     const dx = (mousePos.current.x ?? window.innerWidth  / 2) - cx
     const dy = (mousePos.current.y ?? window.innerHeight / 2) - cy
     const dist = Math.sqrt(dx * dx + dy * dy)

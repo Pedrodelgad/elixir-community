@@ -99,9 +99,11 @@ export default function VideoIntro({ onDone }) {
           width: '100%',
           height: '100%',
           objectFit: 'cover',
+          // Filtro CSS barato (GPU) tanto no mobile quanto no desktop — o feConvolveMatrix (SVG,
+          // por pixel/frame) travava a cutscene em máquinas mais fracas. Mantém o color grade.
           filter: isMobile
             ? 'contrast(1.06) saturate(1.08) brightness(1.04)'
-            : 'url(#vid-enhance) brightness(1.04)',
+            : 'contrast(1.10) saturate(1.12) brightness(1.05)',
           willChange: 'transform',
           transform: 'translateZ(0)',
         }}
