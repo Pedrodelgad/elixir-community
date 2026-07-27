@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion'
 import Logo3D from './Logo3D'
 
-const HOLD_MS = 3000
+const HOLD_MS = 2000
 const LOGO_SIZE = 280
 const RING_R  = 168
 const BOX     = 400
