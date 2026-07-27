@@ -1,7 +1,16 @@
-import { useRef, Suspense, useEffect, useState } from 'react'
+import { useRef, Suspense, useEffect, useState, Component } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { useGLTF, Environment } from '@react-three/drei'
 import * as THREE from 'three'
+
+// Se o WebGL cair (contexto perdido, comum em Mac Retina sob pressão de GPU), NÃO derruba o app:
+// mostra o logo estático no lugar. Sem isso, um erro do Canvas some com o site inteiro.
+class WebGLBoundary extends Component {
+  state = { failed: false }
+  static getDerivedStateFromError() { return { failed: true } }
+  componentDidCatch(e) { console.warn('[Logo3D] WebGL falhou → fallback estático:', e?.message) }
+  render() { return this.state.failed ? this.props.fallback : this.props.children }
+}
 
 // Anel pulsando enquanto o GLB carrega
 function LoadingMesh() {
@@ -128,10 +137,13 @@ export default function Logo3D({ mousePos, phaseRef, size = 280 }) {
         zIndex: 0,
       }} />
 
-      {/* Canvas transparente — sem fundo visível */}
+      {/* Canvas — se o WebGL cair, o boundary mostra o logo estático (não derruba o app) */}
+      <WebGLBoundary fallback={
+        <img src="/imgs/logo3d.png" alt="Elixir" style={{ position: 'relative', width: '100%', height: '100%', objectFit: 'contain', zIndex: 1, filter: 'drop-shadow(0 6px 24px rgba(58,123,213,0.55))' }} />
+      }>
       <Canvas
         style={{ position: 'relative', width: '100%', height: '100%', zIndex: 1 }}
-        dpr={isMobile ? [1, 1] : [1, 1.5]}
+        dpr={[1, 1]}
         camera={{ position: [0, 0, 9.5], fov: 32 }}
         gl={{
           alpha: true,
@@ -145,7 +157,7 @@ export default function Logo3D({ mousePos, phaseRef, size = 280 }) {
         }}
       >
         {/* IBL — suspend={false} para não bloquear o render inicial */}
-        <Environment preset="studio" background={false} suspend={false} />
+        <Environment preset="studio" background={false} suspend={false} resolution={128} />
 
         {/* Luzes */}
         <ambientLight intensity={0.45} color="#d4e8ff" />
@@ -160,6 +172,7 @@ export default function Logo3D({ mousePos, phaseRef, size = 280 }) {
           <Model mousePos={mousePos} phaseRef={phaseRef} />
         </Suspense>
       </Canvas>
+      </WebGLBoundary>
     </div>
   )
 }
