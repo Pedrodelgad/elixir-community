@@ -135,7 +135,7 @@ export default function Logo3D({ mousePos, phaseRef, size = 280 }) {
   }, [])
 
   const staticLogo = (
-    <img src="/imgs/logo3d.png" alt="Elixir" style={{ position: 'relative', width: '100%', height: '100%', objectFit: 'contain', zIndex: 1, filter: 'drop-shadow(0 6px 24px rgba(58,123,213,0.55))' }} />
+    <img src="/imgs/elixir_logo.png" alt="Elixir" style={{ position: 'relative', width: '82%', height: '82%', margin: '9%', objectFit: 'contain', zIndex: 1, filter: 'drop-shadow(0 6px 24px rgba(58,123,213,0.55))' }} />
   )
 
   return (
