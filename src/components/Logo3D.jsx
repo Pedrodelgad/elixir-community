@@ -157,13 +157,13 @@ export default function Logo3D({ mousePos, phaseRef, size = 280 }) {
       <WebGLBoundary fallback={staticLogo}>
       <Canvas
         style={{ position: 'relative', width: '100%', height: '100%', zIndex: 1 }}
-        dpr={[1, 1]}
+        dpr={isMobile ? [1, 1.25] : [1, 2]}
         camera={{ position: [0, 0, 9.5], fov: 32 }}
         gl={{
           alpha: true,
           antialias: !isMobile,
           premultipliedAlpha: false,
-          powerPreference: 'default',
+          powerPreference: 'high-performance',
         }}
         onCreated={({ gl, scene }) => {
           gl.setClearColor(0x000000, 0)
@@ -173,7 +173,7 @@ export default function Logo3D({ mousePos, phaseRef, size = 280 }) {
         }}
       >
         {/* IBL — suspend={false} para não bloquear o render inicial */}
-        <Environment preset="studio" background={false} suspend={false} resolution={128} />
+        <Environment preset="studio" background={false} suspend={false} resolution={256} />
 
         {/* Luzes */}
         <ambientLight intensity={0.45} color="#d4e8ff" />
