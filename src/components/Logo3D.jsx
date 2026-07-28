@@ -123,6 +123,21 @@ const isMobile = typeof window !== 'undefined' &&
 
 // ── Canvas ────────────────────────────────────────────────────────
 export default function Logo3D({ mousePos, phaseRef, size = 280 }) {
+  // WebGL indisponível/bloqueado (Brave com proteção, aceleração de hardware desligada, etc.)
+  // → mostra o logo estático em vez de um buraco vazio.
+  const [webglOk, setWebglOk] = useState(true)
+  useEffect(() => {
+    try {
+      const c = document.createElement('canvas')
+      const gl = c.getContext('webgl2') || c.getContext('webgl') || c.getContext('experimental-webgl')
+      if (!gl || (gl.isContextLost && gl.isContextLost())) setWebglOk(false)
+    } catch { setWebglOk(false) }
+  }, [])
+
+  const staticLogo = (
+    <img src="/imgs/logo3d.png" alt="Elixir" style={{ position: 'relative', width: '100%', height: '100%', objectFit: 'contain', zIndex: 1, filter: 'drop-shadow(0 6px 24px rgba(58,123,213,0.55))' }} />
+  )
+
   return (
     <div style={{ position: 'relative', width: size, height: size }}>
 
@@ -137,10 +152,9 @@ export default function Logo3D({ mousePos, phaseRef, size = 280 }) {
         zIndex: 0,
       }} />
 
-      {/* Canvas — se o WebGL cair, o boundary mostra o logo estático (não derruba o app) */}
-      <WebGLBoundary fallback={
-        <img src="/imgs/logo3d.png" alt="Elixir" style={{ position: 'relative', width: '100%', height: '100%', objectFit: 'contain', zIndex: 1, filter: 'drop-shadow(0 6px 24px rgba(58,123,213,0.55))' }} />
-      }>
+      {/* Sem WebGL → logo estático. Com WebGL → o Canvas (com boundary de segurança). */}
+      {!webglOk ? staticLogo : (
+      <WebGLBoundary fallback={staticLogo}>
       <Canvas
         style={{ position: 'relative', width: '100%', height: '100%', zIndex: 1 }}
         dpr={[1, 1]}
@@ -149,11 +163,13 @@ export default function Logo3D({ mousePos, phaseRef, size = 280 }) {
           alpha: true,
           antialias: !isMobile,
           premultipliedAlpha: false,
-          powerPreference: 'high-performance',
+          powerPreference: 'default',
         }}
         onCreated={({ gl, scene }) => {
           gl.setClearColor(0x000000, 0)
           scene.background = null
+          // Se o contexto cair depois (Brave/GPU) → troca pelo estático em vez de sumir
+          gl.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); setWebglOk(false) }, { once: true })
         }}
       >
         {/* IBL — suspend={false} para não bloquear o render inicial */}
@@ -173,6 +189,7 @@ export default function Logo3D({ mousePos, phaseRef, size = 280 }) {
         </Suspense>
       </Canvas>
       </WebGLBoundary>
+      )}
     </div>
   )
 }
