@@ -25,6 +25,24 @@ const fmt = (s) => {
   return `${m}:${String(sec).padStart(2, '0')}`
 }
 
+// Ícone de alto-falante que muda conforme o volume (mudo / baixo / alto), estilo YouTube
+function VolumeIcon({ muted, volume }) {
+  const off = muted || volume === 0
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
+      <path d="M11 5 6 9H3v6h3l5 4V5z" fill="#fff" />
+      {off ? (
+        <path d="M16 9.5l5 5M21 9.5l-5 5" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />
+      ) : (
+        <>
+          <path d="M15.5 9.2a4 4 0 010 5.6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />
+          {volume >= 50 && <path d="M18.2 6.8a8 8 0 010 10.4" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />}
+        </>
+      )}
+    </svg>
+  )
+}
+
 export default function SecureVideo({ videoId }) {
   const holderRef = useRef(null)
   const playerRef = useRef(null)
@@ -33,6 +51,10 @@ export default function SecureVideo({ videoId }) {
   const [playing, setPlaying] = useState(false)
   const [cur, setCur] = useState(0)
   const [dur, setDur] = useState(0)
+  const [volume, setVolume] = useState(100)
+  const [muted, setMuted] = useState(false)
+  const volTrackRef = useRef(null)
+  const draggingVol = useRef(false)
 
   useEffect(() => {
     let alive = true, poll
@@ -46,7 +68,11 @@ export default function SecureVideo({ videoId }) {
           iv_load_policy: 3, playsinline: 1, autoplay: 1, origin: window.location.origin,
         },
         events: {
-          onReady: (e) => { setReady(true); setDur(e.target.getDuration() || 0); e.target.playVideo() },
+          onReady: (e) => {
+            setReady(true); setDur(e.target.getDuration() || 0)
+            try { setVolume(e.target.getVolume?.() ?? 100); setMuted(e.target.isMuted?.() || false) } catch {}
+            e.target.playVideo()
+          },
           onStateChange: (e) => { setPlaying(e.data === YT.PlayerState.PLAYING) },
         },
       })
@@ -70,6 +96,34 @@ export default function SecureVideo({ videoId }) {
     if (!document.fullscreenElement) el?.requestFullscreen?.()
     else document.exitFullscreen?.()
   }
+
+  // ── Volume (estilo YouTube: barrinha arrastável + botão de mudo) ──
+  const applyVol = (v, m) => {
+    const p = playerRef.current; if (!p) return
+    if (m) p.mute?.()
+    else { p.unMute?.(); p.setVolume?.(v) }
+  }
+  const setVolFromX = (clientX) => {
+    const el = volTrackRef.current; if (!el) return
+    const rect = el.getBoundingClientRect()
+    const v = Math.round(Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)) * 100)
+    setVolume(v); setMuted(v === 0); applyVol(v, v === 0)
+  }
+  const onVolDown = (e) => {
+    e.preventDefault(); e.stopPropagation()
+    draggingVol.current = true
+    setVolFromX(e.clientX)
+    const move = (ev) => { if (draggingVol.current) setVolFromX(ev.clientX) }
+    const up = () => { draggingVol.current = false; window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+  const toggleMute = (e) => {
+    e.stopPropagation()
+    if (muted || volume === 0) { const v = volume === 0 ? 60 : volume; setMuted(false); setVolume(v); applyVol(v, false) }
+    else { setMuted(true); applyVol(volume, true) }
+  }
+  const volPct = muted ? 0 : volume
 
   return (
     <div ref={wrapRef} className="absolute inset-0" style={{ background: '#000' }} onContextMenu={e => e.preventDefault()}>
@@ -95,6 +149,18 @@ export default function SecureVideo({ videoId }) {
             ? <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
             : <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7-11-7z" /></svg>}
         </button>
+
+        {/* Controle de volume — arrastar a barrinha p/ subir/baixar; botão muta/desmuta */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <button onClick={toggleMute} aria-label={muted ? 'Ativar som' : 'Mudo'} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fff', padding: 0, display: 'flex' }}>
+            <VolumeIcon muted={muted} volume={volume} />
+          </button>
+          <div ref={volTrackRef} onPointerDown={onVolDown} style={{ width: 66, height: 5, borderRadius: 3, background: 'rgba(255,255,255,0.25)', cursor: 'pointer', position: 'relative', touchAction: 'none' }}>
+            <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${volPct}%`, background: '#fff', borderRadius: 3 }} />
+            <div style={{ position: 'absolute', left: `${volPct}%`, top: '50%', width: 12, height: 12, marginLeft: -6, transform: 'translateY(-50%)', borderRadius: '50%', background: '#fff', boxShadow: '0 0 3px rgba(0,0,0,0.5)' }} />
+          </div>
+        </div>
+
         <div onClick={seek} style={{ flex: 1, height: 5, borderRadius: 3, background: 'rgba(255,255,255,0.25)', cursor: 'pointer', position: 'relative' }}>
           <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${dur ? Math.min(100, cur / dur * 100) : 0}%`, background: '#7AA7FF', borderRadius: 3 }} />
         </div>
