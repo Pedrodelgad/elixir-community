@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { motion, useMotionValue, useTransform, animate } from 'framer-motion'
+import { motion, useMotionValue, useTransform } from 'framer-motion'
 import Logo3D from './Logo3D'
 
 const HOLD_MS = 2000
@@ -51,13 +51,11 @@ export default function Intro({ onDone }) {
     holdRafRef.current = requestAnimationFrame(tick)
   }
 
-  // ── Hold: cancelar ───────────────────────────────────────────
-  const cancelHold = () => {
-    if (phaseRef.current !== 'holding') return
-    cancelAnimationFrame(holdRafRef.current)
-    setPhaseSync('idle')
-    animate(progressMV, 0, { duration: 0.45, ease: 'easeOut' })
-  }
+  // ── Auto-play: sem clique/segurar — o anel enche sozinho e entra no site ──
+  useEffect(() => {
+    const t = setTimeout(() => startHold(), 450) // pequena pausa pra logo aparecer antes
+    return () => clearTimeout(t)
+  }, [])
 
   if (phase === 'done') return null
 
@@ -83,15 +81,10 @@ export default function Intro({ onDone }) {
         transition={{ duration: phase === 'holding' ? 0.65 : 4, repeat: Infinity, ease: 'easeInOut' }}
       />
 
-      {/* ── Zona interativa ── */}
+      {/* ── Zona da logo (não-interativa — a animação roda sozinha) ── */}
       <div
-        className="relative flex items-center justify-center select-none"
-        style={{ width: BOX, height: BOX, cursor: phase === 'holding' ? 'grabbing' : 'grab' }}
-        onMouseDown={startHold}
-        onMouseUp={cancelHold}
-        onMouseLeave={cancelHold}
-        onTouchStart={(e) => { e.preventDefault(); startHold() }}
-        onTouchEnd={cancelHold}
+        className="relative flex items-center justify-center select-none pointer-events-none"
+        style={{ width: BOX, height: BOX }}
       >
 
         {/* ── SVG Ring ── */}
@@ -204,31 +197,6 @@ export default function Intro({ onDone }) {
       >
         ELIXIR
       </motion.p>
-
-      {/* ── Hint "segure para entrar" ── */}
-      <motion.div
-        className="absolute bottom-14 flex flex-col items-center gap-3 pointer-events-none"
-        animate={{ opacity: phase === 'idle' ? 1 : 0 }}
-        transition={{ duration: 0.25 }}
-      >
-        <motion.p
-          className="text-[11px] font-bold tracking-[4px] uppercase"
-          style={{ color: 'rgba(176,202,242,0.95)', textShadow: '0 0 14px rgba(58,123,213,0.5)' }}
-          animate={{ opacity: [0.7, 1, 0.7] }}
-          transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
-        >
-          segure para entrar
-        </motion.p>
-        <div className="flex gap-1.5">
-          {[0, 1, 2].map(i => (
-            <motion.div key={i} className="rounded-full"
-              style={{ width: 4, height: 4, background: 'rgba(150,185,255,0.8)' }}
-              animate={{ opacity: [0.35, 1, 0.35] }}
-              transition={{ duration: 1.4, repeat: Infinity, delay: i * 0.2, ease: 'easeInOut' }}
-            />
-          ))}
-        </div>
-      </motion.div>
 
       {/* ── Feedback "entrando..." ── */}
       <motion.p
