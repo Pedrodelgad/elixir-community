@@ -5,33 +5,36 @@ import { Connection, PublicKey, Transaction, TransactionInstruction, SystemProgr
 const RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com'
 const RECEIVE = process.env.SOLANA_RECEIVE_WALLET
 const FEE = process.env.SOLANA_FEE_WALLET
-const FEE_BPS = 1500 // 15%
+const FEE_BPS = 0 // sem taxa — 100% do pagamento vai para a carteira principal
 const MEMO_PROGRAM = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr')
 
 let receivePk = null, feePk = null
 try { if (RECEIVE) receivePk = new PublicKey(RECEIVE) } catch { console.error('⚠ SOLANA_RECEIVE_WALLET inválida') }
 try { if (FEE) feePk = new PublicKey(FEE) } catch { console.error('⚠ SOLANA_FEE_WALLET inválida') }
 
-export const solanaConfigured = !!(receivePk && feePk)
-if (!solanaConfigured) console.warn('⚠ Carteiras Solana não configuradas — pagamento em SOL desativado')
+// Só a carteira principal é obrigatória (a de taxa virou opcional — sem split).
+export const solanaConfigured = !!receivePk
+if (!solanaConfigured) console.warn('⚠ Carteira Solana não configurada — pagamento em SOL desativado')
 
 export const connection = new Connection(RPC, 'confirmed')
 
 // total em lamports, taxa e o principal (resto). main+fee = total exato.
+// FEE_BPS=0 → fee=0 e main=total (100% para a carteira principal).
 export function splitLamports(priceSol) {
   const total = Math.round(priceSol * LAMPORTS_PER_SOL)
   const fee = Math.round((total * FEE_BPS) / 10000)
   return { total, fee, main: total - fee }
 }
 
-// Monta a transação não-assinada (2 transfers + memo). feePayer = quem paga.
+// Monta a transação não-assinada (transfer principal + memo; transfer de taxa só
+// se houver taxa configurada). feePayer = quem paga.
 export async function buildPaymentTx(payerStr, priceSol, reference) {
   const payer = new PublicKey(payerStr)
   const { main, fee } = splitLamports(priceSol)
 
   const tx = new Transaction()
   tx.add(SystemProgram.transfer({ fromPubkey: payer, toPubkey: receivePk, lamports: main }))
-  tx.add(SystemProgram.transfer({ fromPubkey: payer, toPubkey: feePk, lamports: fee }))
+  if (fee > 0 && feePk) tx.add(SystemProgram.transfer({ fromPubkey: payer, toPubkey: feePk, lamports: fee }))
   tx.add(new TransactionInstruction({ keys: [], programId: MEMO_PROGRAM, data: Buffer.from(reference, 'utf8') }))
 
   const { blockhash } = await connection.getLatestBlockhash()

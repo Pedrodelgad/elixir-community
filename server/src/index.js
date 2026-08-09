@@ -1416,7 +1416,7 @@ app.post('/api/admin/payouts/:id/fail', auth, adminOnly, async (req, res) => {
 const cryptoIntents = new Map()   // reference -> { userId, planId, main, fee, expires }
 const usedSignatures = new Set()  // anti-replay
 
-// 1) Monta a transação (split 85/15) para a Phantom assinar
+// 1) Monta a transação (100% para a carteira principal) para a Phantom assinar
 app.post('/api/crypto/intent', auth, payLimiter, async (req, res) => {
   if (!solanaConfigured) return res.status(503).json({ error: 'Pagamento em SOL não configurado' })
   const { plan: planId, payer } = req.body

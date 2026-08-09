@@ -1,4 +1,4 @@
-// Discord API — OAuth2 + Bot (gerenciamento de cargo Alpha)
+// Discord API — OAuth2 + Bot (gerenciamento dos cargos do Alpha)
 const API = 'https://discord.com/api/v10'
 
 const CLIENT_ID     = process.env.DISCORD_CLIENT_ID
@@ -7,6 +7,19 @@ const BOT_TOKEN     = process.env.DISCORD_BOT_TOKEN
 const GUILD_ID      = process.env.DISCORD_GUILD_ID
 const ALPHA_ROLE    = process.env.DISCORD_ALPHA_ROLE_ID
 const REDIRECT_URI  = process.env.DISCORD_REDIRECT_URI
+
+// Cargos extras dados JUNTO do Alpha — todo membro Alpha recebe estes também
+// (e perde todos juntos na expiração/cancelamento). Sobrescrevível por
+// DISCORD_EXTRA_ROLE_IDS (lista separada por vírgula) no .env.
+const EXTRA_ROLES = (process.env.DISCORD_EXTRA_ROLE_IDS
+  ? process.env.DISCORD_EXTRA_ROLE_IDS.split(',')
+  : ['1506476637355642903', '1524076196957130904', '1524080856954703882']
+).map(s => s.trim()).filter(Boolean)
+
+// Todos os cargos de um Alpha ativo — aplicados e removidos em conjunto.
+// ⚠️ O cargo do BOT precisa estar ACIMA de todos estes na hierarquia (Config. do
+// Servidor → Cargos), senão o Discord recusa com "Missing Permissions".
+const ALPHA_ROLES = [...new Set([ALPHA_ROLE, ...EXTRA_ROLES].filter(Boolean))]
 
 async function req(method, path, body, userToken) {
   const res = await fetch(`${API}${path}`, {
@@ -58,12 +71,24 @@ export async function addToGuild(discordUserId, accessToken) {
     .catch(() => {}) // ignora se já está no servidor
 }
 
+// Aplica TODOS os cargos do Alpha. Tenta cada um mesmo se outro falhar,
+// e só então lança o erro (com detalhe de qual cargo falhou) para o log do caller.
 export async function addAlphaRole(discordUserId) {
-  await req('PUT', `/guilds/${GUILD_ID}/members/${discordUserId}/roles/${ALPHA_ROLE}`)
+  const errs = []
+  for (const roleId of ALPHA_ROLES) {
+    try { await req('PUT', `/guilds/${GUILD_ID}/members/${discordUserId}/roles/${roleId}`) }
+    catch (e) { errs.push(`${roleId}: ${e.message}`) }
+  }
+  if (errs.length) throw new Error(`cargos não aplicados → ${errs.join(' | ')}`)
 }
 
 export async function removeAlphaRole(discordUserId) {
-  await req('DELETE', `/guilds/${GUILD_ID}/members/${discordUserId}/roles/${ALPHA_ROLE}`)
+  const errs = []
+  for (const roleId of ALPHA_ROLES) {
+    try { await req('DELETE', `/guilds/${GUILD_ID}/members/${discordUserId}/roles/${roleId}`) }
+    catch (e) { errs.push(`${roleId}: ${e.message}`) }
+  }
+  if (errs.length) throw new Error(`cargos não removidos → ${errs.join(' | ')}`)
 }
 
 export async function sendDM(discordUserId, content) {
