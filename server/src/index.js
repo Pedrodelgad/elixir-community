@@ -161,6 +161,7 @@ function toClient(user) {
     expiresAt: active ? sub.expiresAt : null,
     discordLinked: !!user.discordId,
     twoFactorEnabled: !!user.twoFactorEnabled,
+    welcomeSeen: !!user.welcomeSeenAt,
     isAffiliate: !!user.refCode,
     refCode: user.refCode || null,
     affiliateLink: user.refCode ? affiliateLink(user.refCode) : null,
@@ -1504,6 +1505,14 @@ async function buildTree(includeVideoUrl = false) {
 // Aluno: árvore completa (exclusivo Alpha) — sem o link/ID dos vídeos
 app.get('/api/student/tree', auth, alphaOnly, async (req, res) => {
   res.json({ tree: await buildTree(false) })
+})
+
+// Aluno: marca que já viu a tela de boas-vindas (por conta) — idempotente
+app.post('/api/student/welcome-seen', auth, async (req, res) => {
+  if (!req.user.welcomeSeenAt) {
+    await prisma.user.update({ where: { id: req.user.id }, data: { welcomeSeenAt: new Date() } }).catch(() => {})
+  }
+  res.json({ ok: true })
 })
 
 // Aluno: resolve UM vídeo só na hora do play (não vaza o ID na árvore).

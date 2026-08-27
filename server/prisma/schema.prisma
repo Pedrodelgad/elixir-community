@@ -39,6 +39,7 @@ model User {
   // 2FA (TOTP — app autenticador)
   twoFactorSecret  String?            // segredo TOTP (base32)
   twoFactorEnabled Boolean  @default(false)
+  welcomeSeenAt    DateTime?          // Área do Aluno: quando viu a tela de boas-vindas (null = ainda não)
   subscription      Subscription?
   comments          Comment[]
   payments          Payment[]

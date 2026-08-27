@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import LoginModal from '../components/LoginModal'
 import SecureVideo from '../components/SecureVideo'
 import Nav from '../components/Nav'
+import TrilhasHome from '../components/TrilhasHome'
 
 // Ícone do Discord
 function DiscordIcon() {
@@ -253,6 +254,8 @@ export default function AreaDoAlunoPage() {
   const checkout = params.get('checkout')               // 'success' logo após a compra
 
   const isAlpha = user?.plan === 'alpha'
+  // Na home de trilhas (accordion/boas-vindas) o cabeçalho grande é escondido — a home tem o seu próprio
+  const onTrilhasHome = isAlpha && tree && tree.length > 0 && !openSection
 
   useEffect(() => {
     if (!isAlpha) return
@@ -292,7 +295,8 @@ export default function AreaDoAlunoPage() {
         {/* Banner: conecte o Discord (pós-compra + aviso permanente do Alpha) */}
         <DiscordConnectBanner user={user} checkout={checkout} />
 
-        {/* Header */}
+        {/* Header — escondido na home de trilhas (accordion tem cabeçalho próprio) */}
+        {!onTrilhasHome && (
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-5" style={{ background: 'rgba(58,123,213,0.12)', border: '1px solid rgba(122,167,255,0.25)' }}>
             <span className="text-[11px] font-semibold tracking-[2px] uppercase" style={{ color: 'rgba(150,190,255,0.85)', fontFamily: "'Inter', sans-serif" }}>Área do Aluno</span>
@@ -301,6 +305,7 @@ export default function AreaDoAlunoPage() {
             Conteúdo <span className="bg-clip-text text-transparent" style={{ backgroundImage: 'linear-gradient(100deg,#d0e4ff,#7AA7FF,#4d8de8)' }}>exclusivo</span>
           </h1>
         </div>
+        )}
 
         {/* Gating */}
         {!loading && !user && (
@@ -332,13 +337,9 @@ export default function AreaDoAlunoPage() {
           tree.length === 0 ? (
             <p className="text-center text-[13px] py-16" style={{ color: 'rgba(190,210,235,0.4)', fontFamily: "'Inter', sans-serif" }}>Nenhum conteúdo ainda.</p>
           ) : !openSection ? (
-            /* ── Grade de folders (ícone = logo Elixir) ── */
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {tree.map(s => (
-                <FolderCard key={s.id} name={s.name} count={countItems(s)} imageUrl={s.imageUrl}
-                  onOpen={() => { setOpenSection(s.id); setChainId(null); setOpenTopic(null) }} />
-              ))}
-            </div>
+            /* ── Home das trilhas: boas-vindas (1ª vez) + accordion/cards ── */
+            <TrilhasHome sections={tree} user={user} refresh={refresh}
+              onOpenSection={(id) => { setOpenSection(id); setChainId(null); setOpenTopic(null) }} />
           ) : (
             /* ── Folder de seção aberto ── */
             <>
