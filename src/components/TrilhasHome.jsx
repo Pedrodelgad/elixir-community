@@ -46,7 +46,7 @@ export default function TrilhasHome({ sections, onOpenSection, user, refresh }) 
   const [entered, setEntered] = useState(false)   // clicou "Entrar" nesta visita
   const [revealed, setRevealed] = useState(false) // clicou no banner (revela o texto)
   const [agree, setAgree] = useState(false)
-  const [openId, setOpenId] = useState(welcomeSection?.id ?? sections[0]?.id)
+  const [openId, setOpenId] = useState(null) // nada aberto no repouso; hover abre, sair do mouse fecha
 
   const showWelcome = welcomeSection && !user?.welcomeSeen && !entered
 
@@ -102,7 +102,7 @@ export default function TrilhasHome({ sections, onOpenSection, user, refresh }) 
         <h2>Escolha por onde começar</h2>
         <p>Toque ou passe o mouse para abrir</p>
       </div>
-      <div className="trh-accordion">
+      <div className="trh-accordion" onMouseLeave={() => setOpenId(null)}>
         {sections.map(s => (
           <Tile key={s.id} section={s} isOpen={openId === s.id}
             onEnter={() => setOpenId(s.id)} onOpen={() => clickTile(s)} />
