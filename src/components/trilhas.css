@@ -51,7 +51,7 @@
 .trh-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:18px}
 .trh-head h2{font-family:var(--trh-disp);font-weight:700;font-size:clamp(20px,3vw,28px);letter-spacing:-.3px;color:var(--trh-ink);margin:0}
 .trh-head p{color:var(--trh-faint);font-size:13px;margin:0}
-.trh-accordion{display:flex;gap:11px;height:min(62vh,600px)}
+.trh-accordion{display:flex;gap:11px;height:min(54vh,480px)}
 .trh-tile{position:relative;flex:1 1 0;min-width:0;overflow:hidden;border-radius:18px;padding:0;
   border:1px solid var(--trh-line);background:#0a0e1a;cursor:pointer;
   transition:flex-grow .6s cubic-bezier(.22,.61,.36,1),border-color .4s;outline:none;isolation:isolate}
@@ -60,7 +60,7 @@
 .trh-art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;transition:opacity .6s ease}
 .trh-art-v{object-fit:contain;background:#0a0e1a}
 .trh-art-hbg{object-fit:cover;opacity:0;filter:blur(30px) brightness(.5) saturate(1.2);transform:scale(1.2)}
-.trh-art-h{object-fit:contain;opacity:0}
+.trh-art-h{object-fit:cover;opacity:0}
 .trh-tile.is-open .trh-art-v{opacity:0}
 .trh-tile.is-open .trh-art-hbg{opacity:1}
 .trh-tile.is-open .trh-art-h{opacity:1}
