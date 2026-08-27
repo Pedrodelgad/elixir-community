@@ -5,6 +5,8 @@
   --trh-ink:#EEF2FF; --trh-muted:#94a4c6; --trh-faint:#5d6d90;
   --trh-line:rgba(122,167,255,.14); --trh-line2:rgba(122,167,255,.26);
   font-family:var(--trh-body);
+  /* Limita a largura aqui mesmo — não depende do container da página segurar */
+  max-width:1060px; margin-left:auto; margin-right:auto;
 }
 .trh-root *{box-sizing:border-box}
 
