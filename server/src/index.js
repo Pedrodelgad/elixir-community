@@ -120,6 +120,15 @@ const payLimiter = rateLimit({
   message: { error: 'Muitas requisições. Aguarde um pouco.' },
 })
 
+// Rate limit para publicar comentários/reviews — evita o flood que inflou o Comment table
+const commentLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Você está comentando rápido demais. Aguarde um pouco.' },
+})
+
 // Hash "fantasma" para comparar quando o usuário não existe — login leva o mesmo tempo
 // independente do email existir ou não (evita enumeração de contas por timing).
 const DUMMY_HASH = bcrypt.hashSync('elixir-timing-guard', 10)
@@ -1679,15 +1688,17 @@ function commentToClient(c) {
 
 // Lista pública de reviews
 app.get('/api/comments', async (req, res) => {
+  // LIMITE obrigatório: sem take, um Comment table grande derruba a API (OOM).
   const comments = await prisma.comment.findMany({
     orderBy: { createdAt: 'desc' },
+    take: 100,
     include: { user: { include: { subscription: true } } },
   })
   res.json({ comments: comments.map(commentToClient) })
 })
 
 // Publicar review (precisa estar logado)
-app.post('/api/comments', auth, async (req, res) => {
+app.post('/api/comments', commentLimiter, auth, async (req, res) => {
   const text = (req.body.text || '').trim()
   if (!text) return res.status(400).json({ error: 'Escreva alguma coisa' })
   if (text.length > 500) return res.status(400).json({ error: 'Máximo de 500 caracteres' })
