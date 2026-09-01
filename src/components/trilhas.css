@@ -58,13 +58,11 @@
 .trh-tile:focus-visible{border-color:var(--cat);box-shadow:0 0 0 3px color-mix(in srgb,var(--cat) 40%,transparent)}
 .trh-tile.is-open{flex-grow:10;border-color:color-mix(in srgb,var(--cat) 55%,var(--trh-line))}
 .trh-art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;transition:opacity .6s ease}
-.trh-art-vbg{object-fit:cover;filter:blur(26px) brightness(.55) saturate(1.25);transform:scale(1.15)}
 /* zoom leve: o overflow:hidden da tira recorta a margem escura de topo/base do PNG (arte 1:6),
-   fazendo o conteudo encostar em cima e embaixo; as laterais ficam por conta do fundo borrado */
+   fazendo o conteudo encostar em cima e embaixo */
 .trh-art-v{object-fit:contain;transform:scale(1.12)}
 .trh-art-hbg{object-fit:cover;opacity:0;filter:blur(30px) brightness(.5) saturate(1.2);transform:scale(1.2)}
 .trh-art-h{object-fit:cover;opacity:0}
-.trh-tile.is-open .trh-art-vbg{opacity:0}
 .trh-tile.is-open .trh-art-v{opacity:0}
 .trh-tile.is-open .trh-art-hbg{opacity:1}
 .trh-tile.is-open .trh-art-h{opacity:1}
@@ -86,7 +84,7 @@
   .trh-head{flex-direction:column;align-items:flex-start;gap:4px}
   .trh-accordion{flex-direction:column;height:auto;gap:14px}
   .trh-tile{width:100%;flex:none;aspect-ratio:3/2;border-color:color-mix(in srgb,var(--cat) 42%,var(--trh-line))}
-  .trh-tile .trh-art-vbg,.trh-tile .trh-art-v,.trh-tile .trh-art-hbg{display:none}
+  .trh-tile .trh-art-v,.trh-tile .trh-art-hbg{display:none}
   .trh-tile .trh-art-h{opacity:1;object-fit:cover}
   .trh-tile .trh-fallback span{writing-mode:horizontal-tb}
   .trh-tile .trh-scrim{opacity:1}
