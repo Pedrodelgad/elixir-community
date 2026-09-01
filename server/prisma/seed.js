@@ -13,7 +13,7 @@ const PLANS = [
   { id: 'free',     name: 'Gratuito', badge: null,      priceSol: 0,   priceBrl: null,  durationDays: null },
   { id: 'alpha-1m', name: 'Alpha',    badge: '1 mês',   priceSol: 0.5, priceBrl: 18990, durationDays: 30 },
   { id: 'alpha-3m', name: 'Alpha',    badge: '3 meses', priceSol: 0.8, priceBrl: 39790, durationDays: 90 },
-  { id: 'alpha-1y', name: 'Alpha',    badge: '1 ano',   priceSol: 1.2, priceBrl: 59790, durationDays: 365 },
+  { id: 'alpha-1y', name: 'Alpha',    badge: 'Vitalício', priceSol: 1.2, priceBrl: 59790, durationDays: 36500 }, // vitalício (~100 anos)
 ]
 
 async function main() {

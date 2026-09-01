@@ -23,7 +23,7 @@ const PLAN_META = {
   'free':     { label: 'Gratuito',      color: '#8a919e', bg: 'rgba(138,145,158,0.08)', border: 'rgba(138,145,158,0.22)' },
   'alpha-1m': { label: 'Alpha 1 mês',   color: '#aeb6c4', bg: 'rgba(174,182,196,0.10)', border: 'rgba(174,182,196,0.26)' },
   'alpha-3m': { label: 'Alpha 3 meses', color: '#cdd3dd', bg: 'rgba(205,211,221,0.10)', border: 'rgba(205,211,221,0.30)' },
-  'alpha-1y': { label: 'Alpha 1 ano',   color: '#eef1f6', bg: 'rgba(238,241,246,0.10)', border: 'rgba(238,241,246,0.32)' },
+  'alpha-1y': { label: 'Alpha Vitalício', color: '#eef1f6', bg: 'rgba(238,241,246,0.10)', border: 'rgba(238,241,246,0.32)' },
 }
 
 const card = {
@@ -293,7 +293,7 @@ export default function AdminPage() {
                 </p>
               </div>
               <div className="flex items-center gap-4">
-                {[['#5b626f', '1 mês'], ['#9aa3b2', '3 meses'], ['#e4e8ef', '1 ano']].map(([c, l]) => (
+                {[['#5b626f', '1 mês'], ['#9aa3b2', '3 meses'], ['#e4e8ef', 'Vitalício']].map(([c, l]) => (
                   <span key={l} className="flex items-center gap-1.5 text-[11px]" style={{ color: 'rgba(200,206,218,0.55)', fontFamily: "'Inter', sans-serif" }}>
                     <span style={{ width: 9, height: 9, borderRadius: 3, background: c, display: 'inline-block' }}/>
                     {l}

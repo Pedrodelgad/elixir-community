@@ -799,6 +799,10 @@ app.post('/api/checkout', auth, payLimiter, async (req, res) => {
   const isPix = method === 'pix'
   const base = process.env.CORS_ORIGIN || 'http://localhost:5173'
   const productName = `Elixir ${plan.name} — ${plan.badge}`
+  // Assinatura só no cartão E se o plano for recorrente. PIX e planos vitalícios
+  // (sem entrada em RECURRING_INTERVAL, ex.: alpha-1y) = pagamento ÚNICO.
+  const recurringInterval = RECURRING_INTERVAL[plan.id]
+  const useSubscription = !isPix && !!recurringInterval
 
   const params = {
     success_url: `${base}/area-do-aluno?checkout=success`,
@@ -811,18 +815,7 @@ app.post('/api/checkout', auth, payLimiter, async (req, res) => {
 
   try {
     let session
-    if (isPix) {
-      session = await stripe.checkout.sessions.create({
-        ...params,
-        mode: 'payment',
-        payment_method_types: ['pix'],
-        customer_creation: 'always', // necessário p/ Rewardful associar a venda no modo payment
-        line_items: [{
-          quantity: 1,
-          price_data: { currency: 'brl', product_data: { name: productName }, unit_amount: unitAmount },
-        }],
-      })
-    } else {
+    if (useSubscription) {
       session = await stripe.checkout.sessions.create({
         ...params,
         mode: 'subscription',
@@ -833,10 +826,22 @@ app.post('/api/checkout', auth, payLimiter, async (req, res) => {
             currency: 'brl',
             product_data: { name: productName },
             unit_amount: unitAmount,
-            recurring: RECURRING_INTERVAL[plan.id],
+            recurring: recurringInterval,
           },
         }],
         subscription_data: { metadata: { userId: String(req.user.id), planId: plan.id } },
+      })
+    } else {
+      // Pagamento único — PIX (pix) ou plano vitalício no cartão (card)
+      session = await stripe.checkout.sessions.create({
+        ...params,
+        mode: 'payment',
+        payment_method_types: isPix ? ['pix'] : ['card'],
+        customer_creation: 'always', // necessário p/ Rewardful associar a venda no modo payment
+        line_items: [{
+          quantity: 1,
+          price_data: { currency: 'brl', product_data: { name: productName }, unit_amount: unitAmount },
+        }],
       })
     }
     res.json({ url: session.url })

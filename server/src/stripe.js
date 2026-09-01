@@ -15,5 +15,5 @@ if (!key) {
 export const RECURRING_INTERVAL = {
   'alpha-1m': { interval: 'month', interval_count: 1 },
   'alpha-3m': { interval: 'month', interval_count: 3 },
-  'alpha-1y': { interval: 'year', interval_count: 1 },
+  // alpha-1y = vitalício: pagamento único, sem recorrência (não entra aqui)
 }
