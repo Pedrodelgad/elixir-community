@@ -60,6 +60,8 @@ export default function SecureVideo({ videoId }) {
   const draggingVol = useRef(false)
   const [rate, setRate] = useState(1)
   const [speedOpen, setSpeedOpen] = useState(false)
+  const [cc, setCc] = useState(false)
+  const ccRef = useRef(false)
 
   useEffect(() => {
     let alive = true, poll
@@ -76,9 +78,20 @@ export default function SecureVideo({ videoId }) {
           onReady: (e) => {
             setReady(true); setDur(e.target.getDuration() || 0)
             try { setVolume(e.target.getVolume?.() ?? 100); setMuted(e.target.isMuted?.() || false) } catch {}
+            try { e.target.unloadModule('captions'); e.target.unloadModule('cc') } catch {}
             e.target.playVideo()
           },
-          onStateChange: (e) => { setPlaying(e.data === YT.PlayerState.PLAYING) },
+          onStateChange: (e) => {
+            const isPlaying = e.data === YT.PlayerState.PLAYING
+            setPlaying(isPlaying)
+            // O módulo de legenda só existe depois do play — aplica o estado atual do CC quando começa a tocar
+            if (isPlaying) {
+              try {
+                if (ccRef.current) { e.target.loadModule('captions'); e.target.loadModule('cc') }
+                else { e.target.unloadModule('captions'); e.target.unloadModule('cc') }
+              } catch {}
+            }
+          },
         },
       })
       poll = setInterval(() => {
@@ -133,6 +146,17 @@ export default function SecureVideo({ videoId }) {
   // ── Velocidade (setPlaybackRate da API do YouTube) ──
   const applyRate = (r) => { playerRef.current?.setPlaybackRate?.(r); setRate(r); setSpeedOpen(false) }
 
+  // ── Legenda / CC (loadModule/unloadModule da API do YouTube) ──
+  const toggleCC = (e) => {
+    e.stopPropagation()
+    const nv = !cc; setCc(nv); ccRef.current = nv
+    const p = playerRef.current; if (!p) return
+    try {
+      if (nv) { p.loadModule?.('captions'); p.loadModule?.('cc') }
+      else { p.unloadModule?.('captions'); p.unloadModule?.('cc') }
+    } catch {}
+  }
+
   return (
     <div ref={wrapRef} className="absolute inset-0" style={{ background: '#000' }} onContextMenu={e => e.preventDefault()}>
       {/* iframe do YouTube — sem interação direta (clicks vão pro overlay) */}
@@ -173,6 +197,12 @@ export default function SecureVideo({ videoId }) {
           <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${dur ? Math.min(100, cur / dur * 100) : 0}%`, background: '#7AA7FF', borderRadius: 3 }} />
         </div>
         <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11, fontFamily: "'Inter', sans-serif", whiteSpace: 'nowrap' }}>{fmt(cur)} / {fmt(dur)}</span>
+
+        {/* Legenda (CC) — liga/desliga (desligada por padrão) */}
+        <button onClick={toggleCC} aria-label={cc ? 'Desativar legenda' : 'Ativar legenda'} title={cc ? 'Desativar legenda' : 'Ativar legenda'}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', display: 'flex', alignItems: 'center' }}>
+          <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.3, lineHeight: '13px', fontFamily: "'Inter', sans-serif", color: cc ? '#7AA7FF' : '#fff', borderBottom: `2px solid ${cc ? '#7AA7FF' : 'transparent'}` }}>CC</span>
+        </button>
 
         {/* Velocidade de reprodução (0.5x–2x) */}
         <div style={{ position: 'relative', display: 'flex' }}>
