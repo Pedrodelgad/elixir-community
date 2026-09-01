@@ -28,6 +28,7 @@ function Tile({ section, isOpen, onEnter, onOpen }) {
     >
       {art ? (
         <>
+          <img className="trh-art trh-art-vbg" src={art.v} alt="" aria-hidden="true" />
           <img className="trh-art trh-art-v" src={art.v} alt={section.name} />
           <img className="trh-art trh-art-hbg" src={art.h} alt="" aria-hidden="true" />
           <img className="trh-art trh-art-h" src={art.h} alt="" aria-hidden="true" />
