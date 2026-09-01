@@ -25,6 +25,9 @@ const fmt = (s) => {
   return `${m}:${String(sec).padStart(2, '0')}`
 }
 
+// Velocidades de reprodução (YouTube IFrame API: setPlaybackRate)
+const RATES = [0.5, 1, 1.25, 1.5, 1.75, 2]
+
 // Ícone de alto-falante que muda conforme o volume (mudo / baixo / alto), estilo YouTube
 function VolumeIcon({ muted, volume }) {
   const off = muted || volume === 0
@@ -55,6 +58,8 @@ export default function SecureVideo({ videoId }) {
   const [muted, setMuted] = useState(false)
   const volTrackRef = useRef(null)
   const draggingVol = useRef(false)
+  const [rate, setRate] = useState(1)
+  const [speedOpen, setSpeedOpen] = useState(false)
 
   useEffect(() => {
     let alive = true, poll
@@ -125,13 +130,16 @@ export default function SecureVideo({ videoId }) {
   }
   const volPct = muted ? 0 : volume
 
+  // ── Velocidade (setPlaybackRate da API do YouTube) ──
+  const applyRate = (r) => { playerRef.current?.setPlaybackRate?.(r); setRate(r); setSpeedOpen(false) }
+
   return (
     <div ref={wrapRef} className="absolute inset-0" style={{ background: '#000' }} onContextMenu={e => e.preventDefault()}>
       {/* iframe do YouTube — sem interação direta (clicks vão pro overlay) */}
       <div ref={holderRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />
 
       {/* Overlay: captura todos os cliques (play/pause) e bloqueia título/menu do YouTube */}
-      <div onClick={toggle} onContextMenu={e => e.preventDefault()} style={{ position: 'absolute', inset: 0, cursor: 'pointer' }} />
+      <div onClick={() => { if (speedOpen) setSpeedOpen(false); else toggle() }} onContextMenu={e => e.preventDefault()} style={{ position: 'absolute', inset: 0, cursor: 'pointer' }} />
 
       {/* Ícone central quando pausado */}
       {ready && !playing && (
@@ -165,6 +173,25 @@ export default function SecureVideo({ videoId }) {
           <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${dur ? Math.min(100, cur / dur * 100) : 0}%`, background: '#7AA7FF', borderRadius: 3 }} />
         </div>
         <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11, fontFamily: "'Inter', sans-serif", whiteSpace: 'nowrap' }}>{fmt(cur)} / {fmt(dur)}</span>
+
+        {/* Velocidade de reprodução (0.5x–2x) */}
+        <div style={{ position: 'relative', display: 'flex' }}>
+          <button onClick={() => setSpeedOpen(o => !o)} aria-label="Velocidade"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: rate !== 1 ? '#7AA7FF' : '#fff', padding: '0 2px', display: 'flex', alignItems: 'center', fontSize: 12, fontWeight: 700, fontFamily: "'Inter', sans-serif", whiteSpace: 'nowrap' }}>
+            {rate}x
+          </button>
+          {speedOpen && (
+            <div style={{ position: 'absolute', bottom: 'calc(100% + 12px)', right: 0, background: 'rgba(12,16,26,0.97)', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 10, padding: 5, display: 'flex', flexDirection: 'column', gap: 2, minWidth: 78, boxShadow: '0 10px 28px rgba(0,0,0,0.55)', zIndex: 5 }}>
+              {RATES.map(r => (
+                <button key={r} onClick={() => applyRate(r)}
+                  style={{ background: r === rate ? 'rgba(58,123,213,0.35)' : 'none', border: 'none', cursor: 'pointer', color: r === rate ? '#cfe0ff' : 'rgba(255,255,255,0.85)', padding: '6px 10px', borderRadius: 7, fontSize: 12.5, fontWeight: r === rate ? 700 : 500, textAlign: 'center', fontFamily: "'Inter', sans-serif", whiteSpace: 'nowrap' }}>
+                  {r === 1 ? 'Normal' : r + 'x'}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <button onClick={fullscreen} aria-label="Tela cheia" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#fff', padding: 0, display: 'flex' }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 9V5a1 1 0 011-1h4M20 9V5a1 1 0 00-1-1h-4M4 15v4a1 1 0 001 1h4M20 15v4a1 1 0 01-1 1h-4" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" /></svg>
         </button>
