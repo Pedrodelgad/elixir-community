@@ -116,7 +116,7 @@ function VideoPlayerOverlay({ content, onClose }) {
   return (
     <div onClick={onClose} onContextMenu={e => e.preventDefault()}
       style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(2,4,12,0.88)', backdropFilter: 'blur(12px)', overflowY: 'auto', padding: '40px 16px' }}>
-      <div onClick={e => e.stopPropagation()} className="w-full" style={{ maxWidth: 960, margin: '0 auto' }}>
+      <div onClick={e => e.stopPropagation()} className="w-full" style={{ maxWidth: 'min(1760px, 95vw, calc((100vh - 150px) * 16 / 9))', margin: '0 auto' }}>
         {/* Fechar */}
         <div className="flex justify-end mb-3">
           <button onClick={onClose} aria-label="Fechar"
