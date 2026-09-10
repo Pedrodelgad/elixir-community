@@ -50,3 +50,12 @@ export async function sendPixTransfer({ value, pixKey, externalReference, descri
 export async function getTransfer(id) {
   return asaasFetch(`/transfers/${encodeURIComponent(id)}`)
 }
+
+// Busca a transferência pelo NOSSO externalReference (payout.id) — usado na reconciliação de saques
+// presos quando o webhook não chegou e o externalRef não foi salvo. Retorna a transferência ou null.
+export async function findTransferByExternalRef(ref) {
+  const d = await asaasFetch(`/transfers?externalReference=${encodeURIComponent(String(ref))}&limit=10`)
+  const list = Array.isArray(d?.data) ? d.data : []
+  // Confere o externalReference de cada linha (não confia no filtro do servidor) — anti-troca de transferência.
+  return list.find(t => String(t.externalReference) === String(ref)) || null
+}

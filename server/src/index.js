@@ -16,7 +16,7 @@ import { getOAuthUrl, exchangeCode, getDiscordUser, addToGuild, addAlphaRole, re
 import { startGateway } from './gateway.js'
 import { stripe, stripeWebhookSecret, RECURRING_INTERVAL } from './stripe.js'
 import { solanaConfigured, buildPaymentTx, verifyPayment } from './solana.js'
-import { asaasConfigured, sendPixTransfer, getTransfer } from './asaas.js'
+import { asaasConfigured, sendPixTransfer, getTransfer, findTransferByExternalRef } from './asaas.js'
 import { fileURLToPath } from 'url'
 import path from 'path'
 import fs from 'fs'
@@ -1337,7 +1337,47 @@ app.post('/api/webhooks/asaas', async (req, res) => {
   }
 })
 
+// Reconciliação de saques: finaliza no nosso banco os payouts presos em 'processing' consultando o status
+// REAL no Asaas. Cobre o caso do webhook TRANSFER_DONE não chegar (webhook mal configurado, token errado,
+// 401, etc.) — assim o saque não fica "Em processamento" pra sempre depois do PIX já ter caído.
+// Mesma lógica/idempotência do webhook: DONE → paid · FAILED/CANCELLED → devolve saldo.
+async function reconcileProcessingPayouts() {
+  if (!asaasConfigured) return { skipped: true }
+  const stuck = await prisma.payout.findMany({ where: { status: 'processing' } })
+  let done = 0, failed = 0, still = 0, errors = 0
+  for (const p of stuck) {
+    try {
+      let t = null
+      if (p.externalRef) { try { t = await getTransfer(p.externalRef) } catch {} }
+      if (!t) t = await findTransferByExternalRef(p.id) // fallback: acha pelo nosso externalReference
+      const st = String(t?.status || '')
+      const now = new Date()
+      if (st === 'DONE') {
+        await prisma.$transaction([
+          prisma.payout.update({ where: { id: p.id }, data: { status: 'paid', paidAt: now, externalRef: p.externalRef || String(t.id || '') } }),
+          prisma.commission.updateMany({ where: { payoutId: p.id, status: 'pending' }, data: { status: 'paid', paidAt: now } }),
+        ])
+        done++
+      } else if (st === 'FAILED' || st === 'CANCELLED') {
+        await prisma.$transaction([
+          prisma.payout.update({ where: { id: p.id }, data: { status: 'failed' } }),
+          prisma.commission.updateMany({ where: { payoutId: p.id, status: 'pending' }, data: { status: 'approved', payoutId: null } }),
+        ])
+        failed++
+      } else { still++ } // PENDING / BANK_PROCESSING / BLOCKED / não encontrado → segue processando
+    } catch (e) { errors++; console.error(`[Reconcile] payout #${p.id}:`, e.message) }
+  }
+  if (done || failed) console.log(`[Reconcile] saques: ${done} pago(s), ${failed} falho(s), ${still} ainda processando, ${errors} erro(s)`)
+  return { checked: stuck.length, done, failed, still, errors }
+}
+
 /* ─── Admin: visão dos afiliados (só leitura) + válvula manual de saque ─── */
+
+// Válvula manual: força a reconciliação dos saques presos (também roda sozinho de tempos em tempos).
+app.post('/api/admin/payouts/reconcile', auth, adminOnly, async (req, res) => {
+  try { res.json({ ok: true, ...(await reconcileProcessingPayouts()) }) }
+  catch (e) { console.error('[Reconcile] erro:', e.message); res.status(500).json({ error: 'Falha ao reconciliar' }) }
+})
 
 // Saldo de cada afiliado (disponível/em processamento/pago) — o admin acompanha, não paga.
 app.get('/api/admin/affiliates', auth, adminOnly, async (req, res) => {
@@ -1847,4 +1887,11 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`✓ API Elixir rodando em http://localhost:${PORT}`)
+  // Rede de segurança p/ saques presos: reconcilia com o Asaas ao subir e a cada 10 min,
+  // caso um webhook TRANSFER_DONE se perca. Idempotente e barato (só olha os 'processing').
+  if (asaasConfigured) {
+    const tick = () => reconcileProcessingPayouts().catch(e => console.error('[Reconcile] tick:', e.message))
+    setTimeout(tick, 30_000)
+    setInterval(tick, 10 * 60_000)
+  }
 })
