@@ -104,6 +104,13 @@ export function AuthProvider({ children }) {
     return d.url
   }
 
+  // PIX via Asaas: cria a cobrança e devolve o QR + copia-e-cola. cpf só é exigido na 1ª compra.
+  const checkoutPix = (plan, cpf) =>
+    api('/api/checkout/pix', { method: 'POST', body: JSON.stringify({ plan, cpf }) })
+
+  // Consulta se o PIX já foi pago (rede de segurança do webhook). Retorna { paid, status }.
+  const pixStatus = (id) => api(`/api/checkout/pix/${encodeURIComponent(id)}/status`)
+
   // Pagamento em SOL: pede a transação montada (split 90/10) ao backend
   const cryptoIntent = async (plan, payer) => {
     return api('/api/crypto/intent', { method: 'POST', body: JSON.stringify({ plan, payer }) })
@@ -140,7 +147,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, register, login, loginVerify2fa, login2faSendEmail, setup2fa, enable2fa, disable2fa, disable2faSendEmail, logout, checkout, cryptoIntent, cryptoConfirm, refresh, joinAffiliate, updateName }}>
+    <AuthContext.Provider value={{ user, loading, register, login, loginVerify2fa, login2faSendEmail, setup2fa, enable2fa, disable2fa, disable2faSendEmail, logout, checkout, checkoutPix, pixStatus, cryptoIntent, cryptoConfirm, refresh, joinAffiliate, updateName }}>
       {children}
     </AuthContext.Provider>
   )

@@ -141,13 +141,18 @@ function detectSolanaWallets() {
 }
 
 export default function Plans({ onLoginRequest }) {
-  const { user, checkout, cryptoIntent, cryptoConfirm, refresh } = useAuth()
+  const { user, checkout, checkoutPix, pixStatus, cryptoIntent, cryptoConfirm, refresh } = useAuth()
   const [payFor, setPayFor] = useState(null)        // planId aguardando escolha cartão/PIX
   const [loading, setLoading] = useState(false)      // método em processamento ('card'|'pix')
   const [subscribeError, setSubscribeError] = useState(null)
   const [status, setStatus] = useState(null)         // 'processing' | 'success' | 'cancel'
   const [referral, setReferral] = useState(null)     // ID do afiliado (Rewardful), se a visita veio de um link
   const [walletPicker, setWalletPicker] = useState(null) // { planId, wallets } quando há +1 carteira
+  const [pixOpen, setPixOpen] = useState(false)      // painel PIX aberto dentro do modal
+  const [pixCpf, setPixCpf] = useState('')           // CPF (exigido pelo Asaas na 1ª compra)
+  const [pixData, setPixData] = useState(null)       // { paymentId, qrImage, qrPayload, brl }
+  const [pixError, setPixError] = useState(null)
+  const [pixCopied, setPixCopied] = useState(false)
 
   const payingPlan = plans.find(p => p.id === payFor) || null
 
@@ -202,6 +207,52 @@ export default function Plans({ onLoginRequest }) {
       setLoading(false)
     }
   }
+
+  // Fecha o modal de pagamento e zera o estado do PIX
+  const closeModal = () => {
+    if (loading) return
+    setPayFor(null); setPixOpen(false); setPixData(null); setPixCpf(''); setPixError(null)
+  }
+
+  // PIX via Asaas: gera a cobrança (QR + copia-e-cola). CPF só é exigido na 1ª compra.
+  const startPix = async () => {
+    setPixError(null); setLoading('pix')
+    try {
+      const d = await checkoutPix(payFor, pixCpf.replace(/\D/g, ''))
+      setPixData(d)
+    } catch (err) {
+      setPixError(err.message === 'CPF_REQUIRED' ? 'Informe seu CPF para gerar o PIX' : (err.message || 'Erro ao gerar o PIX'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const copyPix = () => {
+    if (!pixData?.qrPayload) return
+    navigator.clipboard?.writeText(pixData.qrPayload)
+      .then(() => { setPixCopied(true); setTimeout(() => setPixCopied(false), 1600) })
+      .catch(() => {})
+  }
+
+  // Enquanto o PIX estiver pendente, pergunta o status a cada 3s (rede de segurança do webhook).
+  // Quando pago → libera o Alpha e mostra o sucesso (reaproveita o fluxo do Stripe).
+  useEffect(() => {
+    if (!pixData?.paymentId) return
+    let alive = true
+    const iv = setInterval(async () => {
+      try {
+        const r = await pixStatus(pixData.paymentId)
+        if (alive && r.paid) {
+          clearInterval(iv)
+          setPixData(null); setPixOpen(false); setPayFor(null); setPixCpf('')
+          setStatus('processing')
+          await refresh()
+          setStatus('success')
+        }
+      } catch { /* segue tentando */ }
+    }, 3000)
+    return () => { alive = false; clearInterval(iv) }
+  }, [pixData?.paymentId])
 
   // Pagamento em SOL: detecta a(s) carteira(s). 0 → avisa; 1 → paga; +1 → mostra seletor.
   const startCrypto = (planId) => {
@@ -734,7 +785,7 @@ export default function Plans({ onLoginRequest }) {
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center px-4"
           style={{ background: 'rgba(2,6,20,0.72)', backdropFilter: 'blur(6px)' }}
-          onClick={() => !loading && setPayFor(null)}
+          onClick={closeModal}
         >
           <div
             className="relative w-full max-w-[420px] rounded-2xl p-7"
@@ -746,7 +797,7 @@ export default function Plans({ onLoginRequest }) {
             onClick={e => e.stopPropagation()}
           >
             <button
-              onClick={() => !loading && setPayFor(null)}
+              onClick={closeModal}
               className="absolute top-4 right-4 w-7 h-7 rounded-lg flex items-center justify-center"
               style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
             >
@@ -763,6 +814,7 @@ export default function Plans({ onLoginRequest }) {
             <p className="text-[12px] mb-5" style={{ color: 'rgba(190,210,235,0.45)', fontFamily: "'Inter', sans-serif" }}>
               ou {payingPlan.brl} no cartão{payingPlan.monthly ? ` · ${payingPlan.monthly}` : ''}
             </p>
+            {!pixOpen ? (<>
             <p className="text-[12px] mb-5" style={{ color: 'rgba(190,210,235,0.45)', fontFamily: "'Inter', sans-serif" }}>
               Escolha como quer pagar:
             </p>
@@ -812,36 +864,77 @@ export default function Plans({ onLoginRequest }) {
               </div>
             </button>
 
-            {/* PIX — em desenvolvimento (ainda não ativado no Stripe) — desabilitado */}
+            {/* PIX — via Asaas (QR + copia-e-cola) */}
             <button
               type="button"
-              disabled
-              title="Em desenvolvimento — ainda não disponível"
-              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl opacity-50"
-              style={{
-                background: 'rgba(120,130,145,0.08)', border: '1px solid rgba(120,130,145,0.22)',
-                cursor: 'not-allowed',
-              }}
+              onClick={() => { setPixError(null); setPixOpen(true) }}
+              disabled={!!loading}
+              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all hover:-translate-y-px disabled:opacity-60"
+              style={{ background: 'rgba(50,190,130,0.12)', border: '1px solid rgba(50,190,130,0.34)', cursor: loading ? 'default' : 'pointer' }}
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-                <path d="M12 3l4 4-4 4-4-4 4-4zM5 10l-2 2 2 2M19 10l2 2-2 2M12 13l4 4-4 4-4-4 4-4z" stroke="rgba(150,170,190,0.7)" strokeWidth="1.5" strokeLinejoin="round"/>
+                <path d="M12 3l4 4-4 4-4-4 4-4zM5 10l-2 2 2 2M19 10l2 2-2 2M12 13l4 4-4 4-4-4 4-4z" stroke="#4fd6a0" strokeWidth="1.5" strokeLinejoin="round"/>
               </svg>
               <div className="text-left flex-1">
-                <p className="text-[13px] font-semibold" style={{ color: 'rgba(200,215,235,0.7)', fontFamily: "'Inter', sans-serif" }}>
-                  PIX
-                </p>
-                <p className="text-[11px]" style={{ color: 'rgba(190,210,235,0.45)', fontFamily: "'Inter', sans-serif" }}>
-                  Em desenvolvimento — em breve
+                <p className="text-[13px] font-semibold" style={{ color: '#7ee7bd', fontFamily: "'Inter', sans-serif" }}>PIX</p>
+                <p className="text-[11px]" style={{ color: 'rgba(140,220,185,0.6)', fontFamily: "'Inter', sans-serif" }}>
+                  QR Code na hora · liberação automática
                 </p>
               </div>
-              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.14)', color: 'rgba(190,210,235,0.55)', fontFamily: "'Inter', sans-serif" }}>
-                em breve
-              </span>
             </button>
 
             <p className="text-[10px] text-center mt-5" style={{ color: 'rgba(143,164,196,0.4)', fontFamily: "'Inter', sans-serif" }}>
-              Pagamento processado pela Stripe · Cargo liberado via Discord
+              Pagamento seguro · Cargo liberado via Discord
             </p>
+            </>) : (
+              <div>
+                <button type="button" onClick={() => { setPixData(null); setPixOpen(false); setPixError(null) }}
+                  className="text-[12px] mb-4 inline-flex items-center gap-1.5"
+                  style={{ color: 'rgba(190,210,235,0.6)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+                  ← voltar
+                </button>
+                {!pixData ? (
+                  <div>
+                    <label className="block text-[12px] mb-1.5" style={{ color: 'rgba(190,210,235,0.7)', fontFamily: "'Inter', sans-serif" }}>CPF do titular</label>
+                    <input
+                      value={pixCpf} onChange={e => setPixCpf(e.target.value)}
+                      inputMode="numeric" placeholder="000.000.000-00" maxLength={14}
+                      className="w-full px-4 py-3 rounded-xl text-[14px] outline-none"
+                      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(122,167,255,0.25)', color: '#EEF2FF', fontFamily: "'Inter', sans-serif" }}
+                    />
+                    {pixError && <p className="text-[12px] mt-2" style={{ color: '#ff9a9a', fontFamily: "'Inter', sans-serif" }}>{pixError}</p>}
+                    <button onClick={startPix} disabled={!!loading}
+                      className="w-full mt-4 px-4 py-3.5 rounded-xl text-[14px] font-semibold text-white transition-all hover:-translate-y-px disabled:opacity-60"
+                      style={{ background: 'linear-gradient(135deg, #16a34a, #22c55e)', boxShadow: '0 6px 24px rgba(20,160,90,0.4)', border: 'none', cursor: loading ? 'default' : 'pointer' }}>
+                      {loading === 'pix' ? 'Gerando PIX...' : `Gerar PIX de ${payingPlan.brl}`}
+                    </button>
+                    <p className="text-[11px] text-center mt-3" style={{ color: 'rgba(190,210,235,0.45)', fontFamily: "'Inter', sans-serif" }}>
+                      Você recebe o QR Code na hora. O Alpha é liberado automaticamente após o pagamento.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="text-center">
+                    <div className="mx-auto mb-3 rounded-xl overflow-hidden" style={{ width: 210, height: 210, background: '#fff', padding: 8 }}>
+                      <img src={`data:image/png;base64,${pixData.qrImage}`} alt="QR Code PIX" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    </div>
+                    <button onClick={copyPix}
+                      className="w-full px-4 py-3 rounded-xl text-[13px] font-semibold transition-all hover:-translate-y-px"
+                      style={{ background: 'rgba(50,190,130,0.14)', border: '1px solid rgba(50,190,130,0.34)', color: '#7ee7bd', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+                      {pixCopied ? '✓ Copiado!' : 'Copiar código PIX (copia-e-cola)'}
+                    </button>
+                    <div className="flex items-center justify-center gap-2 mt-4">
+                      <svg className="animate-spin" width="15" height="15" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 3a9 9 0 1 0 9 9" stroke="rgba(150,190,255,0.9)" strokeWidth="2" strokeLinecap="round"/>
+                      </svg>
+                      <p className="text-[12px]" style={{ color: 'rgba(180,205,255,0.85)', fontFamily: "'Inter', sans-serif" }}>Aguardando pagamento...</p>
+                    </div>
+                    <p className="text-[11px] mt-3" style={{ color: 'rgba(190,210,235,0.45)', fontFamily: "'Inter', sans-serif" }}>
+                      Escaneie o QR ou use o copia-e-cola. Assim que o PIX cair, seu Alpha é liberado sozinho.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

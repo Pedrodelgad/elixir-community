@@ -16,7 +16,8 @@ import { getOAuthUrl, exchangeCode, getDiscordUser, addToGuild, addAlphaRole, re
 import { startGateway } from './gateway.js'
 import { stripe, stripeWebhookSecret, RECURRING_INTERVAL } from './stripe.js'
 import { solanaConfigured, buildPaymentTx, verifyPayment } from './solana.js'
-import { asaasConfigured, sendPixTransfer, getTransfer, findTransferByExternalRef } from './asaas.js'
+import { asaasConfigured, sendPixTransfer, getTransfer, findTransferByExternalRef,
+         createCustomer, createPixCharge, getPixQrCode, getPayment } from './asaas.js'
 import { fileURLToPath } from 'url'
 import path from 'path'
 import fs from 'fs'
@@ -851,6 +852,89 @@ app.post('/api/checkout', auth, payLimiter, async (req, res) => {
   }
 })
 
+/* ─── Checkout PIX via Asaas (recebimento) ─── */
+// Cria uma cobrança PIX no Asaas e devolve o QR + copia-e-cola. O Alpha é liberado no webhook
+// PAYMENT_RECEIVED (ou no polling de status, como rede de segurança). O dinheiro cai no saldo do
+// Asaas — o MESMO de onde saem as comissões dos afiliados, então as vendas abastecem os saques.
+const pixDueDate = () => new Date(Date.now() + 86400000).toISOString().slice(0, 10) // amanhã (YYYY-MM-DD)
+
+app.post('/api/checkout/pix', auth, payLimiter, async (req, res) => {
+  if (!asaasConfigured) return res.status(503).json({ error: 'PIX ainda não configurado' })
+  const plan = await prisma.plan.findUnique({ where: { id: String(req.body?.plan || '') } })
+  if (!plan || !plan.durationDays || !plan.priceBrl) return res.status(400).json({ error: 'Plano inválido' })
+
+  const me = await prisma.user.findUnique({ where: { id: req.user.id } })
+
+  // Cliente Asaas: reusa o guardado; senão cria com o CPF informado (Asaas exige cpfCnpj)
+  let customerId = me.asaasCustomerId
+  if (!customerId) {
+    const cpf = String(req.body?.cpf || '').replace(/\D/g, '')
+    if (cpf.length !== 11) return res.status(400).json({ error: 'CPF_REQUIRED', message: 'Informe um CPF válido' })
+    try {
+      const c = await createCustomer({ name: me.name, cpfCnpj: cpf, email: me.email })
+      customerId = c.id
+      await prisma.user.update({ where: { id: me.id }, data: { asaasCustomerId: customerId } })
+    } catch (e) {
+      console.error('[Asaas] criar cliente:', e.message)
+      return res.status(502).json({ error: 'Não foi possível iniciar o PIX' })
+    }
+  }
+
+  try {
+    const charge = await createPixCharge({
+      customer: customerId,
+      value: plan.priceBrl / 100,
+      externalReference: `${me.id}:${plan.id}`,
+      description: `Elixir ${plan.name} — ${plan.badge}`,
+      dueDate: pixDueDate(),
+    })
+    const qr = await getPixQrCode(charge.id)
+    res.json({ paymentId: charge.id, qrImage: qr.encodedImage, qrPayload: qr.payload, brl: plan.priceBrl, expiresAt: qr.expirationDate || null })
+  } catch (e) {
+    console.error('[Asaas] gerar cobrança PIX:', e.message)
+    res.status(502).json({ error: 'Não foi possível gerar o PIX' })
+  }
+})
+
+// Libera o Alpha a partir de uma cobrança PIX paga no Asaas (idempotente). Reusa o núcleo do Stripe.
+// Anti-spoof: reconsulta a cobrança no Asaas e só age se o status for RECEIVED/CONFIRMED.
+async function handleAsaasPaymentPaid(paymentId, expectUserId = null) {
+  if (!paymentId) return { ok: false }
+  let pay
+  try { pay = await getPayment(paymentId) } catch (e) { console.error('[Asaas] getPayment:', e.message); return { ok: false, retry: true } }
+  const status = String(pay?.status || '')
+  if (!['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'].includes(status)) return { ok: false, status }
+
+  const [uid, planId] = String(pay.externalReference || '').split(':')
+  const userId = Number(uid)
+  if (!userId || !planId) { console.warn('[Asaas] cobrança sem externalReference válido:', pay.id); return { ok: false } }
+  if (expectUserId && userId !== Number(expectUserId)) return { ok: false, forbidden: true }
+
+  // idempotência: se já registramos esse pagamento, o Alpha já foi liberado (não reativa, não re-manda DM)
+  if (await prisma.payment.findUnique({ where: { providerRef: String(pay.id) } })) return { ok: true, already: true }
+
+  const plan = await prisma.plan.findUnique({ where: { id: planId } })
+  if (!plan) return { ok: false }
+  const amountBrl = Math.round((pay.value || plan.priceBrl / 100) * 100)
+  const expiresAt = new Date(Date.now() + plan.durationDays * 86400000)
+  await activateAlpha({ userId, planId, expiresAt, recurring: false, priceSol: plan.priceSol || 0, priceBrl: amountBrl })
+  await recordPaymentAndCommission({ userId, planId, amountBrl, method: 'pix', provider: 'asaas', providerRef: String(pay.id), kind: 'first' })
+  console.log(`[Asaas] PIX pago → Alpha liberado (user=${userId}, plan=${planId}, R$${(amountBrl / 100).toFixed(2)})`)
+  return { ok: true }
+}
+
+// Polling do status do PIX (rede de segurança caso o webhook demore/se perca): se pago, libera o Alpha.
+app.get('/api/checkout/pix/:id/status', auth, async (req, res) => {
+  if (!asaasConfigured) return res.status(503).json({ error: 'indisponível' })
+  try {
+    const r = await handleAsaasPaymentPaid(req.params.id, req.user.id)
+    res.json({ paid: !!r.ok, status: r.status || null })
+  } catch (e) {
+    console.error('[Asaas] status PIX:', e.message)
+    res.status(500).json({ error: 'erro' })
+  }
+})
+
 /* ─── Webhook da Stripe ─── */
 
 // Calcula a validade e ativa o Alpha a partir de uma sessão paga (cartão ou PIX)
@@ -1295,6 +1379,16 @@ app.post('/api/webhooks/asaas', async (req, res) => {
     return res.status(401).end()
   }
   const event = String(req.body?.event || '')
+
+  // Recebimento de PIX (venda de plano) → libera o Alpha. Só os eventos que significam "pago".
+  if (/^PAYMENT_/.test(event)) {
+    if (event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED') {
+      try { await handleAsaasPaymentPaid(req.body?.payment?.id) }
+      catch (e) { console.error('[Asaas] webhook pagamento:', e.message); return res.status(500).json({ error: 'retry' }) }
+    }
+    return res.json({ received: true })
+  }
+
   const transfer = req.body?.transfer || {}
   const payoutId = Number(transfer.externalReference)
   if (!payoutId) return res.json({ received: true }) // não é de um saque nosso

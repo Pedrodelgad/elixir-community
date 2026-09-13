@@ -51,6 +51,43 @@ export async function getTransfer(id) {
   return asaasFetch(`/transfers/${encodeURIComponent(id)}`)
 }
 
+/* ─── Recebimento de PIX (venda de plano) ─── */
+
+// Cria (ou acha) o cliente Asaas do comprador. cpfCnpj é OBRIGATÓRIO no Asaas.
+// Guardamos o customerId no nosso User p/ reusar nas próximas compras (não repetir CPF).
+export async function createCustomer({ name, cpfCnpj, email }) {
+  const d = await asaasFetch('/customers', {
+    method: 'POST',
+    body: { name, cpfCnpj: String(cpfCnpj).replace(/\D/g, ''), email },
+  })
+  return d // { id, ... }
+}
+
+// Cria uma cobrança PIX de pagamento único. value em REAIS (número). externalReference = "<userId>:<planId>".
+export async function createPixCharge({ customer, value, externalReference, description, dueDate }) {
+  return asaasFetch('/payments', {
+    method: 'POST',
+    body: {
+      customer,
+      billingType: 'PIX',
+      value: Number(Number(value).toFixed(2)),
+      dueDate, // YYYY-MM-DD
+      externalReference: String(externalReference),
+      description: description || 'Assinatura Elixir Alpha',
+    },
+  })
+}
+
+// QR Code do PIX de uma cobrança: { encodedImage (base64 PNG), payload (copia-e-cola), expirationDate }.
+export async function getPixQrCode(paymentId) {
+  return asaasFetch(`/payments/${encodeURIComponent(paymentId)}/pixQrCode`)
+}
+
+// Consulta uma cobrança pelo id (anti-spoof: confere o status real antes de liberar o Alpha).
+export async function getPayment(id) {
+  return asaasFetch(`/payments/${encodeURIComponent(id)}`)
+}
+
 // Busca a transferência pelo NOSSO externalReference (payout.id) — usado na reconciliação de saques
 // presos quando o webhook não chegou e o externalRef não foi salvo. Retorna a transferência ou null.
 export async function findTransferByExternalRef(ref) {
