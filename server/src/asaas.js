@@ -58,7 +58,9 @@ export async function getTransfer(id) {
 export async function createCustomer({ name, cpfCnpj, email }) {
   const d = await asaasFetch('/customers', {
     method: 'POST',
-    body: { name, cpfCnpj: String(cpfCnpj).replace(/\D/g, ''), email },
+    // notificationDisabled: não manda os e-mails/SMS de cobrança do Asaas (que exibem nome/CPF).
+    // A confirmação pro cliente é a nossa (QR no site + DM no Discord).
+    body: { name, cpfCnpj: String(cpfCnpj).replace(/\D/g, ''), email, notificationDisabled: true },
   })
   return d // { id, ... }
 }
