@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
+import { afterIntro } from '../introGate'
 
 const AuthContext = createContext(null)
 
@@ -36,10 +37,12 @@ export function AuthProvider({ children }) {
           })
       : api('/api/auth/me')
 
+    // A requisição sai agora (rede não custa main thread), mas o commit espera o portão
+    // da intro: um setState aqui no meio da animação re-renderiza a árvore inteira.
     restore
-      .then(d => setUser(d.user))
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false))
+      .then(d => d.user ?? null)
+      .catch(() => null)
+      .then(u => afterIntro(() => { setUser(u); setLoading(false) }))
   }, [])
 
   const register = async ({ name, handle, email, password }) => {

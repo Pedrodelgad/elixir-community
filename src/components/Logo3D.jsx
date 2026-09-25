@@ -1,15 +1,19 @@
-import { useRef, Suspense, useEffect, useState, Component } from 'react'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { useGLTF, Environment } from '@react-three/drei'
+import { useRef, Suspense, useEffect, useLayoutEffect, useState, Component } from 'react'
+import { Canvas, useFrame, useThree, useLoader } from '@react-three/fiber'
+import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
+import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js'
 
 // Se o WebGL cair (contexto perdido, comum em Mac Retina sob pressão de GPU), NÃO derruba o app:
 // mostra o logo estático no lugar. Sem isso, um erro do Canvas some com o site inteiro.
 class WebGLBoundary extends Component {
   state = { failed: false }
   static getDerivedStateFromError() { return { failed: true } }
-  componentDidCatch(e) { console.warn('[Logo3D] WebGL falhou → fallback estático:', e?.message) }
-  render() { return this.state.failed ? this.props.fallback : this.props.children }
+  componentDidCatch(e) {
+    console.warn('[Logo3D] WebGL falhou → fallback estático:', e?.message)
+    this.props.onFail?.()
+  }
+  render() { return this.state.failed ? null : this.props.children }
 }
 
 // Anel pulsando enquanto o GLB carrega
@@ -29,12 +33,38 @@ function LoadingMesh() {
   )
 }
 
-// Garante canvas transparente todo frame (Environment sobrescreve scene.background)
-function ClearBg() {
-  const { scene, gl } = useThree()
+// ── IBL local ─────────────────────────────────────────────────────
+// Antes: <Environment preset="studio"> baixava studio_small_03_1k.hdr (1,68 MB!) de um CDN
+// de terceiro (raw.githack) EM RUNTIME — e a chegada dele no meio da animação disparava
+// decode na main thread + PMREM na GPU + recompilação do shader: o engasgo clássico.
+// Agora é o MESMO HDRI, reamostrado pra 256x128 (128 KB) e servido daqui. Como o PMREM
+// borra tudo de qualquer jeito, o reflexo no logo fica igual — e carrega dentro do
+// Suspense, ou seja, antes do primeiro frame visível.
+function StudioEnv() {
+  const gl    = useThree(s => s.gl)
+  const scene = useThree(s => s.scene)
+  const tex   = useLoader(HDRLoader, '/imgs/studio_env.hdr')
+  useLayoutEffect(() => {
+    tex.mapping = THREE.EquirectangularReflectionMapping
+    const pmrem = new THREE.PMREMGenerator(gl)
+    const rt = pmrem.fromEquirectangular(tex)
+    scene.environment = rt.texture
+    return () => { rt.dispose(); pmrem.dispose(); scene.environment = null }
+  }, [gl, scene, tex])
+  return null
+}
+
+// Aquece os shaders (compile) e só avisa "pronto" depois de 2 frames REAIS desenhados —
+// é o gatilho do cross-fade PNG → canvas e do cronômetro da intro.
+function Ready({ onReady }) {
+  const { gl, scene, camera } = useThree()
+  const frames = useRef(0)
+  useLayoutEffect(() => {
+    try { gl.compile(scene, camera) } catch { /* compile é só otimização */ }
+  }, [gl, scene, camera])
   useFrame(() => {
-    scene.background = null
-    gl.setClearAlpha(0)
+    frames.current += 1
+    if (frames.current === 2) onReady?.()
   })
   return null
 }
@@ -48,13 +78,19 @@ function Model({ mousePos, phaseRef }) {
   const tiltX    = useRef(0)
   const tiltZ    = useRef(0)
 
-  // Centro do canvas cacheado. getBoundingClientRect() todo frame força reflow (layout thrashing);
-  // a posição só muda no resize, então calcula uma vez + em resize.
-  const centerRef = useRef({ cx: window.innerWidth / 2, cy: window.innerHeight / 2 })
+  // Centro do canvas + tamanho da janela cacheados. getBoundingClientRect()/innerWidth todo
+  // frame força reflow (layout thrashing); só mudam no resize.
+  const viewRef = useRef({
+    cx: window.innerWidth / 2, cy: window.innerHeight / 2,
+    vw: window.innerWidth,     vh: window.innerHeight,
+  })
   useEffect(() => {
     const update = () => {
       const r = gl.domElement.getBoundingClientRect()
-      centerRef.current = { cx: r.left + r.width / 2, cy: r.top + r.height / 2 }
+      viewRef.current = {
+        cx: r.left + r.width / 2, cy: r.top + r.height / 2,
+        vw: window.innerWidth,    vh: window.innerHeight,
+      }
     }
     update()
     window.addEventListener('resize', update)
@@ -88,9 +124,9 @@ function Model({ mousePos, phaseRef }) {
     if (!modelRef.current) return
     if (phaseRef.current === 'done') return
 
-    const { cx, cy } = centerRef.current
-    const dx = (mousePos.current.x ?? window.innerWidth  / 2) - cx
-    const dy = (mousePos.current.y ?? window.innerHeight / 2) - cy
+    const { cx, cy, vw, vh } = viewRef.current
+    const dx = (mousePos.current.x ?? vw / 2) - cx
+    const dy = (mousePos.current.y ?? vh / 2) - cy
     const dist = Math.sqrt(dx * dx + dy * dy)
 
     // Velocidade: 0px → 0.18 rad/s (suave) | 700px+ → 0.008 rad/s
@@ -106,8 +142,8 @@ function Model({ mousePos, phaseRef }) {
     modelRef.current.rotation.y += speedRef.current * delta * 60
 
     // Inclinação 3D seguindo o mouse
-    const tx = (dy / (window.innerHeight * 0.5)) * -0.22
-    const tz = (dx / (window.innerWidth  * 0.5)) *  0.10
+    const tx = (dy / (vh * 0.5)) * -0.22
+    const tz = (dx / (vw * 0.5)) *  0.10
     tiltX.current += (tx - tiltX.current) * 0.05
     tiltZ.current += (tz - tiltZ.current) * 0.05
     modelRef.current.rotation.x = tiltX.current
@@ -122,21 +158,34 @@ const isMobile = typeof window !== 'undefined' &&
   (window.matchMedia?.('(pointer: coarse)').matches || window.innerWidth < 768)
 
 // ── Canvas ────────────────────────────────────────────────────────
-export default function Logo3D({ mousePos, phaseRef, size = 280 }) {
+export default function Logo3D({ mousePos, phaseRef, size = 280, onReady }) {
   // WebGL indisponível/bloqueado (Brave com proteção, aceleração de hardware desligada, etc.)
   // → mostra o logo estático em vez de um buraco vazio.
   const [webglOk, setWebglOk] = useState(true)
+  // Primeiro frame 3D desenhado → faz o cross-fade do PNG para o canvas.
+  const [canvasUp, setCanvasUp] = useState(false)
+
+  const readyRef = useRef(false)
+  const signalReady = () => {
+    if (readyRef.current) return
+    readyRef.current = true
+    onReady?.()
+  }
+
+  // Sem WebGL (ou contexto perdido): o PNG É a versão final — a intro pode seguir na hora.
+  const fail = () => {
+    setWebglOk(false)
+    setCanvasUp(false)
+    signalReady()
+  }
+
   useEffect(() => {
     try {
       const c = document.createElement('canvas')
       const gl = c.getContext('webgl2') || c.getContext('webgl') || c.getContext('experimental-webgl')
-      if (!gl || (gl.isContextLost && gl.isContextLost())) setWebglOk(false)
-    } catch { setWebglOk(false) }
+      if (!gl || (gl.isContextLost && gl.isContextLost())) fail()
+    } catch { fail() }
   }, [])
-
-  const staticLogo = (
-    <img src="/imgs/elixir_logo.png" alt="Elixir" style={{ position: 'relative', width: '82%', height: '82%', margin: '9%', objectFit: 'contain', zIndex: 1, filter: 'drop-shadow(0 6px 24px rgba(58,123,213,0.55))' }} />
-  )
 
   return (
     <div style={{ position: 'relative', width: size, height: size }}>
@@ -152,11 +201,28 @@ export default function Logo3D({ mousePos, phaseRef, size = 280 }) {
         zIndex: 0,
       }} />
 
-      {/* Sem WebGL → logo estático. Com WebGL → o Canvas (com boundary de segurança). */}
-      {!webglOk ? staticLogo : (
-      <WebGLBoundary fallback={staticLogo}>
+      {/* Logo estático: aparece no PRIMEIRO frame da página (pré-carregado no index.html),
+          sem depender do bundle/GLB/WebGL. Some em cross-fade quando o 3D desenha. */}
+      <img
+        src="/imgs/elixir_logo.png"
+        alt="Elixir"
+        style={{
+          position: 'absolute', inset: '9%', width: '82%', height: '82%',
+          objectFit: 'contain', zIndex: 1, pointerEvents: 'none',
+          filter: 'drop-shadow(0 6px 24px rgba(58,123,213,0.55))',
+          opacity: canvasUp ? 0 : 1,
+          transition: 'opacity 260ms ease-out',
+        }}
+      />
+
+      {webglOk && (
+      <WebGLBoundary onFail={fail}>
       <Canvas
-        style={{ position: 'relative', width: '100%', height: '100%', zIndex: 1 }}
+        style={{
+          position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 2,
+          opacity: canvasUp ? 1 : 0,
+          transition: 'opacity 260ms ease-out',
+        }}
         dpr={isMobile ? [1, 1.25] : [1, 2]}
         camera={{ position: [0, 0, 9.5], fov: 32 }}
         gl={{
@@ -167,25 +233,23 @@ export default function Logo3D({ mousePos, phaseRef, size = 280 }) {
         }}
         onCreated={({ gl, scene }) => {
           gl.setClearColor(0x000000, 0)
+          gl.setClearAlpha(0)
           scene.background = null
           // Se o contexto cair depois (Brave/GPU) → troca pelo estático em vez de sumir
-          gl.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); setWebglOk(false) }, { once: true })
+          gl.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); fail() }, { once: true })
         }}
       >
-        {/* IBL — suspend={false} para não bloquear o render inicial */}
-        <Environment preset="studio" background={false} suspend={false} resolution={256} />
-
         {/* Luzes */}
         <ambientLight intensity={0.45} color="#d4e8ff" />
         <directionalLight position={[4, 6, 4]} intensity={1.3} color="#ffffff" />
         <pointLight position={[-5, 0, 3]} intensity={1.5} color="#3A7BD5" />
         <pointLight position={[3, -4, 2]} intensity={0.4} color="#7AA7FF" />
 
-        {/* Força transparência todo frame */}
-        <ClearBg />
-
         <Suspense fallback={<LoadingMesh />}>
+          {/* IBL antes do modelo: a env precisa existir quando o shader for compilado */}
+          <StudioEnv />
           <Model mousePos={mousePos} phaseRef={phaseRef} />
+          <Ready onReady={() => { setCanvasUp(true); signalReady() }} />
         </Suspense>
       </Canvas>
       </WebGLBoundary>
@@ -194,4 +258,4 @@ export default function Logo3D({ mousePos, phaseRef, size = 280 }) {
   )
 }
 
-// Preload já feito no App.jsx — não duplicar
+// Preload já feito no App.jsx + <link rel="preload"> no index.html — não duplicar

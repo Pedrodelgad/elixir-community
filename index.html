@@ -23,7 +23,22 @@
     <meta name="twitter:title" content="Elixir — Comunidade de Trading & Memecoins" />
     <meta name="twitter:description" content="Calls em tempo real, leitura de mercado e conteúdo exclusivo Alpha. Entre na comunidade cripto da Elixir." />
     <meta name="twitter:image" content="https://elixiralpha.com/imgs/logo3d.png" />
+    <!-- Intro: o logo estático aparece no 1º frame (não espera o bundle/WebGL) e o GLB
+         começa a baixar já no parse do HTML, não depois do JS executar.
+         Só na home e só quando a intro vai mesmo rodar — nas outras rotas e na 2ª visita
+         da sessão seriam ~330KB baixados à toa. -->
+    <script>
+      try {
+        if (location.pathname === '/' && sessionStorage.getItem('elixir_intro_done') !== '1') {
+          document.head.insertAdjacentHTML('beforeend',
+            '<link rel="preload" as="image" href="/imgs/elixir_logo.png" fetchpriority="high">' +
+            '<link rel="preload" as="fetch" type="model/gltf-binary" href="/imgs/logo3d.glb" crossorigin="anonymous">' +
+            '<link rel="preload" as="fetch" href="/imgs/studio_env.hdr" crossorigin="anonymous">')
+        }
+      } catch (e) { /* preload é só otimização */ }
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
   </head>
   <body>
