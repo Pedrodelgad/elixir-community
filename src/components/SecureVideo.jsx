@@ -181,10 +181,14 @@ export default function SecureVideo({ videoId }) {
         .some(v => v && v !== 'none')
         || /transform|filter|perspective/.test(cs.willChange || '')
         || /paint|layout|strict|content/.test(cs.contain || '')
-      if (!traps) continue
+      // Camada de empilhamento (ex.: container "relative z-10" da página) deixaria o header do site
+      // (z-50) por cima do vídeo — solta também enquanto durar a tela cheia.
+      const stacks = (cs.position !== 'static' && cs.zIndex !== 'auto') || cs.isolation === 'isolate'
+      if (!traps && !stacks) continue
       touched.push([n, n.style.cssText])
-      Object.assign(n.style, { backdropFilter: 'none', webkitBackdropFilter: 'none', filter: 'none',
+      if (traps) Object.assign(n.style, { backdropFilter: 'none', webkitBackdropFilter: 'none', filter: 'none',
         transform: 'none', perspective: 'none', willChange: 'auto', contain: 'none' })
+      if (stacks) Object.assign(n.style, { zIndex: 'auto', isolation: 'auto' })
     }
     const html = document.documentElement
     const prevOverflow = html.style.overflow

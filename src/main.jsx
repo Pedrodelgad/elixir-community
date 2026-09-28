@@ -8,6 +8,8 @@ import AdminPage from './pages/AdminPage.jsx'
 import AffiliatePage from './pages/AffiliatePage.jsx'
 import AreaDoAlunoPage from './pages/AreaDoAlunoPage.jsx'
 import VincularDiscordPage from './pages/VincularDiscordPage.jsx'
+import ToolsPage from './pages/ToolsPage.jsx'
+import ToolPage from './pages/ToolPage.jsx'
 import './index.css'
 
 // Afiliados: ?ref=CODE → cookie elx_ref (60d, 1st-party) + conta o clique, e limpa a URL
@@ -35,6 +37,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/videos" element={<Navigate to="/area-do-aluno" replace />} />
           <Route path="/area-do-aluno" element={<AreaDoAlunoPage />} />
+          <Route path="/tools" element={<ToolsPage />} />
+          <Route path="/tools/:slug" element={<ToolPage />} />
           <Route path="/afiliado" element={<AffiliatePage />} />
           <Route path="/vincular-discord" element={<VincularDiscordPage />} />
         </Routes>

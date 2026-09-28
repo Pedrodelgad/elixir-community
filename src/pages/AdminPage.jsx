@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import AdminStudentArea from '../components/AdminStudentArea'
+import AdminTools from '../components/AdminTools'
 
 /* ─── Usuários agora vêm do banco via API (/api/admin/users) ─── */
 /* ─── Comentários, vendas e vídeos ainda são mock — próximos passos ─── */
@@ -113,7 +114,8 @@ export default function AdminPage() {
   const [comments, setComments] = useState([])
   const [stats, setStats] = useState({ revenueSol: 0, revenueBrl: 0, totalSales: 0, sales: [] })
   const [affiliates, setAffiliates] = useState([])
-  const [studentOpen, setStudentOpen] = useState(false) // só a Área do Aluno é recolhível (recolhida por padrão)
+  const [studentOpen, setStudentOpen] = useState(false) // Área do Aluno e Tools são recolhíveis (recolhidas por padrão)
+  const [toolsOpen, setToolsOpen] = useState(false)
 
   // Busca tudo do banco: contas, comentários e estatísticas
   useEffect(() => {
@@ -323,6 +325,25 @@ export default function AdminPage() {
             </svg>
           </button>
           {studentOpen && <div className="mt-4"><AdminStudentArea /></div>}
+        </div>
+
+        {/* ── Tools (vitrine /tools + página de cada ferramenta) — recolhível ── */}
+        <div className="rounded-2xl p-6" style={card}>
+          <button onClick={() => setToolsOpen(v => !v)} className="w-full flex items-center justify-between gap-3 text-left"
+            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+            <div>
+              <h2 className="text-[16px] font-bold" style={{ fontFamily: "'Space Grotesk', sans-serif", color: '#f2f4f8' }}>
+                Tools
+              </h2>
+              <p className="text-[11px] mt-0.5" style={{ color: 'rgba(170,176,188,0.5)', fontFamily: "'Inter', sans-serif" }}>
+                Ferramentas da Elixir — banner, prévia e página de cada uma. Públicas ou exclusivas Alpha.
+              </p>
+            </div>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0, transform: toolsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+              <path d="M6 9l6 6 6-6" stroke="rgba(200,206,218,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          {toolsOpen && <div className="mt-4"><AdminTools /></div>}
         </div>
 
         {/* ── Afiliados (saldos — só leitura) ── */}

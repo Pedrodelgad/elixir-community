@@ -13,6 +13,7 @@ const PLAN_CONFIG = {
 const NAV_LINKS = [
   { label: 'Comunidade', href: '/#comunidade' },
   { label: 'Área do Aluno', to: '/area-do-aluno' },
+  { label: 'Tools', to: '/tools' },
   { label: 'Planos', to: '/planos' },
   { label: 'Afiliados', to: '/afiliado' },
 ]

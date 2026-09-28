@@ -184,3 +184,41 @@ model Payout {
 
   @@index([affiliateUserId])
 }
+
+// ─── Aba Tools ───
+// Ferramentas da Elixir (vitrine em /tools). Cada uma tem banner 3:1, prévia e uma página própria
+// (/tools/:slug) montada em blocos pelo admin. access "alpha" → conteúdo só pra assinantes.
+model Tool {
+  id        Int         @id @default(autoincrement())
+  slug      String      @unique            // vai no link: /tools/<slug>
+  title     String
+  tagline   String?                        // linha curta abaixo do nome ("Bot de entradas · Solana")
+  summary   String                         // texto da prévia
+  imageUrl  String?                        // banner 3:1 (/media/…)
+  access    String      @default("public") // "public" | "alpha"
+  active    Boolean     @default(false)    // rascunho até o admin publicar
+  position  Int         @default(0)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  blocks    ToolBlock[]
+}
+
+// Bloco da página de uma tool, na ordem de `position`.
+model ToolBlock {
+  id        Int      @id @default(autoincrement())
+  toolId    Int
+  tool      Tool     @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  type      String   // "text" | "video" | "image" | "button" | "file"
+  position  Int      @default(0)
+  title     String?  // título (texto/vídeo) · rótulo (botão) · legenda (imagem)
+  body      String?  // texto corrido (bloco de texto)
+  url       String?  // YouTube (vídeo) · /media/… (imagem) · link (botão) · nome no disco privado (arquivo)
+  imageUrl  String?  // capa opcional do vídeo (/media/…)
+  fileName  String?  // nome original do arquivo (download)
+  fileSize  Int?     // bytes do arquivo
+  variant   String?  // botão: "primary" | "secondary"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([toolId])
+}

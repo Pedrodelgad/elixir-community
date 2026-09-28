@@ -19,6 +19,7 @@ export default defineConfig({
       },
       // arquivos das ferramentas (download) servidos pelo backend
       '/uploads': { target: 'http://localhost:3001', changeOrigin: true, secure: false },
+      '/media': { target: 'http://localhost:3001', changeOrigin: true, secure: false },
     },
   },
 })

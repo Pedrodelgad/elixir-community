@@ -1806,6 +1806,365 @@ app.post('/api/admin/categories/:id/move', auth, adminOnly, async (req, res) => 
   res.json({ ok: true })
 })
 
+/* ─── Tools (vitrine /tools + página de cada ferramenta) ─── */
+// Imagens (banners, imagens de bloco, capas de vídeo) → /media: pasta PÚBLICA, só imagem, nome aleatório
+// e cache longo. Fica separada do /uploads (exclusivo Alpha) pra vitrine abrir pra qualquer visitante.
+// Arquivos pra download → pasta PRIVADA (não é servida direto): o download passa por /api/tools/file/:id,
+// que confere o acesso da tool antes de entregar.
+const MEDIA = path.resolve(__dirname, '../media')
+const TOOL_FILES = path.resolve(__dirname, '../tool-files')
+fs.mkdirSync(MEDIA, { recursive: true })
+fs.mkdirSync(TOOL_FILES, { recursive: true })
+
+app.use('/media', express.static(MEDIA, {
+  index: false,
+  immutable: true, maxAge: '365d', // nome aleatório e nunca reaproveitado → cache longo é seguro
+  setHeaders: (res) => res.setHeader('X-Content-Type-Options', 'nosniff'),
+}))
+app.use('/media', (req, res) => res.status(404).end()) // não cai no catch-all do SPA
+
+// Tipo real da imagem pelos primeiros bytes (não confia em extensão/mimetype). SVG fica de fora (pode ter script).
+const IMG_TYPES = [
+  { ext: '.png', test: b => b.length > 8 && b.readUInt32BE(0) === 0x89504e47 && b.readUInt32BE(4) === 0x0d0a1a0a },
+  { ext: '.jpg', test: b => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  { ext: '.webp', test: b => b.length > 12 && b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP' },
+]
+const uploadImage = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } }).single('file')
+const uploadToolFile = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, TOOL_FILES),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).slice(0, 12).replace(/[^.a-zA-Z0-9]/g, '').toLowerCase()
+      cb(null, crypto.randomBytes(16).toString('hex') + ext)
+    },
+  }),
+  limits: { fileSize: 50 * 1024 * 1024, files: 1 },
+}).single('file')
+
+const MEDIA_RE = /^\/media\/[a-f0-9]{32}\.(png|jpg|webp)$/
+const TOOL_FILE_RE = /^[a-f0-9]{32}(\.[a-z0-9]{1,11})?$/
+const mediaOk = (u) => u == null || u === '' || MEDIA_RE.test(u)
+function removeMediaFile(url) {
+  if (typeof url === 'string' && MEDIA_RE.test(url)) fs.promises.unlink(path.join(MEDIA, path.basename(url))).catch(() => {})
+}
+function removeToolFile(name) {
+  if (typeof name === 'string' && TOOL_FILE_RE.test(name)) fs.promises.unlink(path.join(TOOL_FILES, name)).catch(() => {})
+}
+function cleanupBlockFiles(b) {
+  if (b.type === 'image') removeMediaFile(b.url)
+  if (b.type === 'video') removeMediaFile(b.imageUrl)
+  if (b.type === 'file') removeToolFile(b.url)
+}
+
+// Link de botão: só http(s) ou página interna ("/planos"). Bloqueia javascript:, data:, "//site" e "/\site".
+function safeLink(u) {
+  const s = String(u ?? '').trim()
+  if (!s || s.length > 2000) return null
+  if (s.startsWith('/')) return /^\/[/\\]/.test(s) ? null : s
+  try { const x = new URL(s); return x.protocol === 'https:' || x.protocol === 'http:' ? x.toString() : null } catch { return null }
+}
+
+const slugify = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '')
+async function uniqueSlug(base) {
+  const root = slugify(base) || 'tool'
+  for (let i = 1; i < 500; i++) {
+    const cand = i === 1 ? root : `${root.slice(0, 55)}-${i}`
+    if (!(await prisma.tool.findUnique({ where: { slug: cand } }))) return cand
+  }
+  return `${root.slice(0, 45)}-${crypto.randomBytes(4).toString('hex')}`
+}
+
+// Alpha = assinatura ativa ou admin (mesma regra do alphaOnly)
+const hasAlpha = (u) => !!u && (u.role === 'admin' || (!!u.subscription && new Date(u.subscription.expiresAt) > new Date()))
+
+// Login opcional: identifica quem está logado (se estiver) sem barrar visitante
+async function optionalAuth(req, res, next) {
+  req.user = null
+  try {
+    const token = req.cookies[COOKIE]
+    if (token) {
+      const d = jwt.verify(token, JWT_SECRET)
+      if (!d.twoFactorPending) req.user = await prisma.user.findUnique({ where: { id: d.userId }, include: { subscription: true } })
+    }
+  } catch { /* token inválido/expirado → segue como visitante */ }
+  next()
+}
+
+const toolOrder = [{ position: 'asc' }, { id: 'asc' }]
+const toolCounts = (blocks) => ({
+  video: blocks.filter(b => b.type === 'video').length,
+  file: blocks.filter(b => b.type === 'file').length,
+  link: blocks.filter(b => b.type === 'button').length,
+})
+function toolMeta(t, user) {
+  return {
+    id: t.id, slug: t.slug, title: t.title, tagline: t.tagline, summary: t.summary, imageUrl: t.imageUrl,
+    access: t.access, active: t.active, updatedAt: t.updatedAt, counts: toolCounts(t.blocks || []),
+    locked: t.access === 'alpha' && !hasAlpha(user),
+  }
+}
+// Bloco como vai pro público: vídeo sem o link/ID (só sai no play) e arquivo sem o caminho no disco
+function publicBlock(b) {
+  const base = { id: b.id, type: b.type, title: b.title }
+  if (b.type === 'text') return { ...base, body: b.body }
+  if (b.type === 'video') return { ...base, imageUrl: b.imageUrl }
+  if (b.type === 'image') return { ...base, url: b.url }
+  if (b.type === 'button') return { ...base, url: b.url, variant: b.variant || 'primary' }
+  if (b.type === 'file') return { ...base, fileName: b.fileName, fileSize: b.fileSize }
+  return base
+}
+
+const toolLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Muitas requisições. Aguarde um pouco.' },
+})
+
+// Vitrine: tools publicadas, na ordem do admin. Tools Alpha aparecem pra todos (com locked:true
+// pra quem não tem acesso) — o conteúdo delas só sai em /api/tools/:slug pra quem pode ver.
+app.get('/api/tools', optionalAuth, async (req, res) => {
+  const tools = await prisma.tool.findMany({ where: { active: true }, orderBy: toolOrder, include: { blocks: { select: { type: true } } } })
+  res.json({ tools: tools.map(t => toolMeta(t, req.user)) })
+})
+
+// Página da tool. Rascunho só o admin vê. Sem acesso → só o topo (sem blocos) + motivo.
+app.get('/api/tools/:slug', optionalAuth, async (req, res) => {
+  const t = await prisma.tool.findUnique({ where: { slug: String(req.params.slug) }, include: { blocks: { orderBy: toolOrder } } })
+  if (!t || (!t.active && req.user?.role !== 'admin')) return res.status(404).json({ error: 'Ferramenta não encontrada' })
+  const tool = toolMeta(t, req.user)
+  if (tool.locked) return res.json({ tool, blocks: [], reason: req.user ? 'alpha' : 'login' })
+  res.json({ tool, blocks: t.blocks.map(publicBlock) })
+})
+
+// Bloco protegido (vídeo/arquivo): confere se a tool está publicada e se quem pede tem acesso
+async function toolBlockFor(req, res, type) {
+  const b = await prisma.toolBlock.findUnique({ where: { id: Number(req.params.id) || 0 }, include: { tool: true } })
+  if (!b || b.type !== type || (!b.tool.active && req.user?.role !== 'admin')) {
+    res.status(404).json({ error: 'Conteúdo não encontrado' }); return null
+  }
+  if (b.tool.access === 'alpha' && !hasAlpha(req.user)) {
+    res.status(req.user ? 403 : 401).json({ error: 'Conteúdo exclusivo para membros Alpha' }); return null
+  }
+  return b
+}
+
+// Vídeo: o ID do YouTube só é entregue na hora do play (igual à Área do Aluno)
+app.get('/api/tools/video/:id', toolLimiter, optionalAuth, async (req, res) => {
+  const b = await toolBlockFor(req, res, 'video'); if (!b) return
+  const id = youtubeId(b.url)
+  if (!id) return res.status(404).json({ error: 'Vídeo indisponível' })
+  res.setHeader('Cache-Control', 'private, no-store')
+  res.json({ youtube: true, videoId: id })
+})
+
+// Download: arquivo da pasta privada, com o nome original, só depois de conferir o acesso
+app.get('/api/tools/file/:id', toolLimiter, optionalAuth, async (req, res) => {
+  const b = await toolBlockFor(req, res, 'file'); if (!b) return
+  if (!TOOL_FILE_RE.test(b.url || '')) return res.status(404).json({ error: 'Arquivo indisponível' })
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('Cache-Control', 'private, no-store')
+  res.download(path.join(TOOL_FILES, b.url), b.fileName || 'arquivo', (err) => {
+    if (err && !res.headersSent) res.status(404).json({ error: 'Arquivo indisponível' })
+  })
+})
+
+/* Admin — tools */
+
+function readToolInput(body, partial) {
+  const data = {}, str = (v) => String(v ?? '').trim()
+  if (!partial || 'title' in body) {
+    const v = str(body.title)
+    if (!v || v.length > 80) return { error: 'Informe o nome da tool (até 80 caracteres)' }
+    data.title = v
+  }
+  if ('tagline' in body) {
+    const v = str(body.tagline)
+    if (v.length > 80) return { error: 'A linha de apoio pode ter até 80 caracteres' }
+    data.tagline = v || null
+  }
+  if (!partial || 'summary' in body) {
+    const v = str(body.summary)
+    if (!v || v.length > 600) return { error: 'Escreva o texto da prévia (até 600 caracteres)' }
+    data.summary = v
+  }
+  if ('imageUrl' in body) {
+    const v = body.imageUrl || null
+    if (!mediaOk(v)) return { error: 'Banner inválido — envie a imagem de novo' }
+    data.imageUrl = v
+  }
+  if ('access' in body) {
+    if (!['public', 'alpha'].includes(body.access)) return { error: 'Acesso inválido' }
+    data.access = body.access
+  }
+  if ('active' in body) data.active = body.active === true
+  return { data }
+}
+
+function readBlockInput(type, b) {
+  const str = (v) => String(v ?? '').trim()
+  const title = str(b.title)
+  switch (type) {
+    case 'text': {
+      const body = str(b.body)
+      if (title.length > 120) return { error: 'Título do bloco: até 120 caracteres' }
+      if (!body || body.length > 8000) return { error: 'Escreva o texto do bloco (até 8.000 caracteres)' }
+      return { data: { title: title || null, body } }
+    }
+    case 'video': {
+      const url = str(b.url), imageUrl = b.imageUrl || null
+      if (!youtubeId(url)) return { error: 'Cole um link válido do YouTube' }
+      if (title.length > 120) return { error: 'Título do vídeo: até 120 caracteres' }
+      if (!mediaOk(imageUrl)) return { error: 'Capa inválida — envie a imagem de novo' }
+      return { data: { title: title || null, url, imageUrl } }
+    }
+    case 'image': {
+      const url = str(b.url)
+      if (!MEDIA_RE.test(url)) return { error: 'Envie a imagem do bloco' }
+      if (title.length > 200) return { error: 'Legenda: até 200 caracteres' }
+      return { data: { title: title || null, url } }
+    }
+    case 'button': {
+      const url = safeLink(b.url)
+      if (!title || title.length > 60) return { error: 'Escreva o texto do botão (até 60 caracteres)' }
+      if (!url) return { error: 'Link inválido — use https://… ou uma página do site (ex.: /planos)' }
+      return { data: { title, url, variant: b.variant === 'secondary' ? 'secondary' : 'primary' } }
+    }
+    case 'file': {
+      const url = str(b.url)
+      if (!TOOL_FILE_RE.test(url) || !fs.existsSync(path.join(TOOL_FILES, url))) return { error: 'Envie o arquivo do bloco' }
+      if (title.length > 120) return { error: 'Título do arquivo: até 120 caracteres' }
+      const size = Number(b.fileSize)
+      return { data: { title: title || null, url, fileName: str(b.fileName).slice(0, 200) || 'arquivo', fileSize: Number.isFinite(size) ? Math.max(0, Math.round(size)) : null } }
+    }
+  }
+  return { error: 'Tipo de bloco inválido' }
+}
+
+const touchTool = (id) => prisma.tool.update({ where: { id }, data: { updatedAt: new Date() } }).catch(() => {})
+
+app.get('/api/admin/tools', auth, adminOnly, async (req, res) => {
+  const tools = await prisma.tool.findMany({ orderBy: toolOrder, include: { blocks: { orderBy: toolOrder } } })
+  res.json({ tools })
+})
+
+app.post('/api/admin/tools', auth, adminOnly, async (req, res) => {
+  const body = req.body || {}
+  const { data, error } = readToolInput(body, false)
+  if (error) return res.status(400).json({ error })
+  if (data.active && !data.imageUrl) return res.status(400).json({ error: 'Envie o banner antes de publicar' })
+  data.slug = await uniqueSlug(body.slug || data.title)
+  const last = await prisma.tool.findFirst({ orderBy: { position: 'desc' } })
+  const tool = await prisma.tool.create({ data: { ...data, position: (last?.position ?? -1) + 1 } })
+  res.json({ tool })
+})
+
+app.patch('/api/admin/tools/:id', auth, adminOnly, async (req, res) => {
+  const id = Number(req.params.id), body = req.body || {}
+  const existing = await prisma.tool.findUnique({ where: { id } })
+  if (!existing) return res.status(404).json({ error: 'Tool não existe' })
+  const { data, error } = readToolInput(body, true)
+  if (error) return res.status(400).json({ error })
+  if ('slug' in body) {
+    const s = slugify(body.slug)
+    if (!s) return res.status(400).json({ error: 'Link inválido — use letras, números e hífens' })
+    const taken = await prisma.tool.findUnique({ where: { slug: s } })
+    if (taken && taken.id !== id) return res.status(409).json({ error: 'Esse link já está em uso por outra tool' })
+    data.slug = s
+  }
+  const willBeActive = 'active' in data ? data.active : existing.active
+  const banner = 'imageUrl' in data ? data.imageUrl : existing.imageUrl
+  if (willBeActive && !banner) return res.status(400).json({ error: 'Envie o banner antes de publicar' })
+  const tool = await prisma.tool.update({ where: { id }, data })
+  if (existing.imageUrl && existing.imageUrl !== tool.imageUrl) removeMediaFile(existing.imageUrl)
+  res.json({ tool })
+})
+
+app.delete('/api/admin/tools/:id', auth, adminOnly, async (req, res) => {
+  const id = Number(req.params.id)
+  const t = await prisma.tool.findUnique({ where: { id }, include: { blocks: true } })
+  if (!t) return res.status(404).json({ error: 'Tool não existe' })
+  await prisma.tool.delete({ where: { id } }) // blocos saem em cascata
+  removeMediaFile(t.imageUrl)
+  t.blocks.forEach(cleanupBlockFiles)
+  res.json({ ok: true })
+})
+
+app.post('/api/admin/tools/:id/move', auth, adminOnly, async (req, res) => {
+  const ok = await moveAmongSiblings('tool', Number(req.params.id), req.body?.dir, {})
+  if (!ok) return res.status(404).json({ error: 'Tool não existe' })
+  res.json({ ok: true })
+})
+
+app.post('/api/admin/tools/:id/blocks', auth, adminOnly, async (req, res) => {
+  const toolId = Number(req.params.id), body = req.body || {}
+  if (!(await prisma.tool.findUnique({ where: { id: toolId } }))) return res.status(404).json({ error: 'Tool não existe' })
+  const { data, error } = readBlockInput(String(body.type || ''), body)
+  if (error) return res.status(400).json({ error })
+  const last = await prisma.toolBlock.findFirst({ where: { toolId }, orderBy: { position: 'desc' } })
+  const block = await prisma.toolBlock.create({ data: { ...data, type: body.type, toolId, position: (last?.position ?? -1) + 1 } })
+  await touchTool(toolId)
+  res.json({ block })
+})
+
+app.patch('/api/admin/tool-blocks/:id', auth, adminOnly, async (req, res) => {
+  const existing = await prisma.toolBlock.findUnique({ where: { id: Number(req.params.id) } })
+  if (!existing) return res.status(404).json({ error: 'Bloco não existe' })
+  const { data, error } = readBlockInput(existing.type, { ...existing, ...(req.body || {}) })
+  if (error) return res.status(400).json({ error })
+  const block = await prisma.toolBlock.update({ where: { id: existing.id }, data })
+  // arquivo/imagem trocado → apaga o antigo
+  if (existing.type === 'image' && existing.url !== block.url) removeMediaFile(existing.url)
+  if (existing.type === 'video' && existing.imageUrl !== block.imageUrl) removeMediaFile(existing.imageUrl)
+  if (existing.type === 'file' && existing.url !== block.url) removeToolFile(existing.url)
+  await touchTool(existing.toolId)
+  res.json({ block })
+})
+
+app.delete('/api/admin/tool-blocks/:id', auth, adminOnly, async (req, res) => {
+  const b = await prisma.toolBlock.findUnique({ where: { id: Number(req.params.id) } })
+  if (!b) return res.status(404).json({ error: 'Bloco não existe' })
+  await prisma.toolBlock.delete({ where: { id: b.id } })
+  cleanupBlockFiles(b)
+  await touchTool(b.toolId)
+  res.json({ ok: true })
+})
+
+app.post('/api/admin/tool-blocks/:id/move', auth, adminOnly, async (req, res) => {
+  const b = await prisma.toolBlock.findUnique({ where: { id: Number(req.params.id) } })
+  if (!b) return res.status(404).json({ error: 'Bloco não existe' })
+  await moveAmongSiblings('toolBlock', b.id, req.body?.dir, { toolId: b.toolId })
+  await touchTool(b.toolId)
+  res.json({ ok: true })
+})
+
+// Upload de imagem (banner, imagem de bloco, capa de vídeo) → /media
+app.post('/api/admin/media', auth, adminOnly, (req, res) => {
+  uploadImage(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Imagem grande demais (máx. 5 MB)' : 'Falha no upload' })
+    if (!req.file) return res.status(400).json({ error: 'Nenhuma imagem enviada' })
+    const kind = IMG_TYPES.find(k => k.test(req.file.buffer))
+    if (!kind) return res.status(400).json({ error: 'Formato não suportado — use PNG, JPG ou WEBP' })
+    const name = crypto.randomBytes(16).toString('hex') + kind.ext
+    try {
+      await fs.promises.writeFile(path.join(MEDIA, name), req.file.buffer)
+      res.json({ url: `/media/${name}` })
+    } catch (e) {
+      console.error('[Tools] salvar imagem:', e.message)
+      res.status(500).json({ error: 'Não foi possível salvar a imagem' })
+    }
+  })
+})
+
+// Upload de arquivo pra download → pasta privada (entregue só por /api/tools/file/:id)
+app.post('/api/admin/tool-files', auth, adminOnly, (req, res) => {
+  uploadToolFile(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Arquivo grande demais (máx. 50 MB)' : 'Falha no upload' })
+    if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' })
+    const original = Buffer.from(req.file.originalname, 'latin1').toString('utf8') // multer entrega em latin1
+    res.json({ file: req.file.filename, fileName: original.slice(0, 200), fileSize: req.file.size })
+  })
+})
+
 /* ─── Comentários (reviews da comunidade) ─── */
 
 // Formato de comentário enviado ao front
