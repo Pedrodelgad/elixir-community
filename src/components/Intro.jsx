@@ -3,7 +3,8 @@ import { motion, useMotionValue, useTransform } from 'framer-motion'
 import { releaseIntroGate } from '../introGate'
 import Logo3D from './Logo3D'
 
-const HOLD_MS = 2000
+// Tempo do anel enchendo. Com o MIN_SHOW_MS, o logo fica 4s girando na tela antes do site aparecer.
+const HOLD_MS = 3650
 // Tempo com o logo já visível antes do anel começar a encher.
 const MIN_SHOW_MS = 350
 // Teto de segurança: mesmo que o 3D não fique pronto (rede ruim, GPU lenta), a intro anda.
