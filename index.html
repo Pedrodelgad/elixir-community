@@ -31,7 +31,7 @@
       try {
         if (location.pathname === '/' && sessionStorage.getItem('elixir_intro_done') !== '1') {
           document.head.insertAdjacentHTML('beforeend',
-            '<link rel="preload" as="image" href="/imgs/elixir_logo.png" fetchpriority="high">' +
+            '<link rel="preload" as="image" type="image/webp" href="/imgs/logo3d_static.webp" fetchpriority="high">' +
             '<link rel="preload" as="fetch" type="model/gltf-binary" href="/imgs/logo3d.glb" crossorigin="anonymous">' +
             '<link rel="preload" as="fetch" href="/imgs/studio_env.hdr" crossorigin="anonymous">')
         }

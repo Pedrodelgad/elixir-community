@@ -202,18 +202,25 @@ export default function Logo3D({ mousePos, phaseRef, size = 280, onReady }) {
       }} />
 
       {/* Logo estático: aparece no PRIMEIRO frame da página (pré-carregado no index.html),
-          sem depender do bundle/GLB/WebGL. Some em cross-fade quando o 3D desenha. */}
-      <img
-        src="/imgs/elixir_logo.png"
-        alt="Elixir"
-        style={{
-          position: 'absolute', inset: '9%', width: '82%', height: '82%',
-          objectFit: 'contain', zIndex: 1, pointerEvents: 'none',
-          filter: 'drop-shadow(0 6px 24px rgba(58,123,213,0.55))',
-          opacity: canvasUp ? 0 : 1,
-          transition: 'opacity 260ms ease-out',
-        }}
-      />
+          sem depender do bundle/GLB/WebGL. É uma foto do PRÓPRIO modelo 3D (mesmo material, luzes,
+          reflexo e câmera, na pose inicial, fundo transparente, 560px) — então a troca pro 3D é
+          invisível: ele só começa a girar. Se o WebGL falhar, fica esta mesma imagem, no visual certo.
+          Mesmo enquadramento do canvas (inset 0 / 100%) pra alinhar pixel a pixel no cross-fade. */}
+      <picture>
+        <source srcSet="/imgs/logo3d_static.webp" type="image/webp" />
+        <img
+          src="/imgs/logo3d_static.png"
+          alt="Elixir"
+          width={560}
+          height={560}
+          style={{
+            position: 'absolute', inset: 0, width: '100%', height: '100%',
+            objectFit: 'contain', zIndex: 1, pointerEvents: 'none',
+            opacity: canvasUp ? 0 : 1,
+            transition: 'opacity 260ms ease-out',
+          }}
+        />
+      </picture>
 
       {webglOk && (
       <WebGLBoundary onFail={fail}>
