@@ -16,6 +16,8 @@ export default function AmbientBeams() {
         <rect width="100%" height="100%" filter="url(#bg-grain)"/>
       </svg>
 
+      {/* Cada grupo de luz "respira" no próprio ritmo (.e-beam no index.css — só no desktop) */}
+      <div className="e-beam" style={{ '--d': '9s', '--dl': '0s' }}>
       {/* ══ FEIXE A — diagonal esquerda-direita, azul-gelo ══ */}
       {/* halo externo */}
       <div style={{
@@ -42,6 +44,9 @@ export default function AmbientBeams() {
         filter: 'blur(0.8px)',
       }}/>
 
+      </div>
+
+      <div className="e-beam" style={{ '--d': '11s', '--dl': '-3s' }}>
       {/* ══ FEIXE B — diagonal direita-esquerda, índigo/azul ══ */}
       {/* halo externo */}
       <div style={{
@@ -68,6 +73,9 @@ export default function AmbientBeams() {
         filter: 'blur(0.8px)',
       }}/>
 
+      </div>
+
+      <div className="e-beam" style={{ '--d': '7s', '--dl': '-1.5s' }}>
       {/* ══ FEIXE C — quase vertical, mais estreito, ciano-suave ══ */}
       {/* halo */}
       <div style={{
@@ -94,6 +102,10 @@ export default function AmbientBeams() {
         filter: 'blur(0.6px)',
       }}/>
 
+      </div>
+
+      {/* cruzamentos pulsam mais rápido — pontos de "energia" */}
+      <div className="e-beam" style={{ '--d': '5.5s', '--dl': '-2s' }}>
       {/* ══ GLOW DE CRUZAMENTO — onde A e B se encontram ══ */}
       <div style={{
         position: 'absolute', top: '28%', left: '42%',
@@ -120,6 +132,9 @@ export default function AmbientBeams() {
         filter: 'blur(28px)',
       }}/>
 
+      </div>
+
+      <div className="e-beam" style={{ '--d': '13s', '--dl': '-6s' }}>
       {/* ══ ORBS AMBIENTES — profundidade de cor no fundo ══ */}
       <div style={{
         position: 'absolute', top: '15%', left: '-15%',
@@ -139,6 +154,7 @@ export default function AmbientBeams() {
         background: 'radial-gradient(ellipse at center, rgba(30,20,70,0.09) 0%, transparent 65%)',
         filter: 'blur(100px)',
       }}/>
+      </div>
     </div>
   )
 }

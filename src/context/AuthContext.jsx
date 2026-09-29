@@ -99,10 +99,10 @@ export function AuthProvider({ children }) {
 
   // Inicia o checkout na Stripe. method: 'card' (assinatura) | 'pix' (avulso).
   // Retorna a URL da Stripe para redirecionar.
-  const checkout = async (plan, method, referral) => {
+  const checkout = async (plan, method) => {
     const d = await api('/api/checkout', {
       method: 'POST',
-      body: JSON.stringify({ plan, method, referral }),
+      body: JSON.stringify({ plan, method }),
     })
     return d.url
   }

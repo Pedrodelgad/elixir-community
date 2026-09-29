@@ -47,7 +47,7 @@ npm run db:seed             # planos + admin (admin@elixir.com / admin123 — TR
 - `JWT_SECRET=` → 48 bytes aleatórios: `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`
 - `CORS_ORIGIN=https://seudominio.com`
 - `DISCORD_REDIRECT_URI=https://seudominio.com/api/auth/discord/callback` (e cadastre essa URL em **Redirects** no Discord Dev Portal)
-- Discord (CLIENT_ID/SECRET/BOT_TOKEN/GUILD_ID/ALPHA_ROLE_ID), Gmail, Rewardful, Solana — como já estão no dev.
+- Discord (CLIENT_ID/SECRET/BOT_TOKEN/GUILD_ID/ALPHA_ROLE_ID), Gmail, Solana, Asaas — como já estão no dev.
 - Stripe: ver passo 7.
 
 ## 5) Subir o backend com PM2
@@ -88,10 +88,11 @@ sudo certbot --nginx -d seudominio.com -d www.seudominio.com
 ## Operação / manutenção
 - **Atualizar o site:** `git pull` → `npm install && npm run build` (raiz) + `cd server && npm install && npx prisma migrate deploy` → `npm run api:restart`.
 - **Mudou o `.env`:** `npm run api:restart`.
-- **Backup (importante!):** o banco é o arquivo `server/prisma/dev.db` e os arquivos em `server/uploads/`. Faça backup periódico dos dois (ex.: cron + scp pra outro lugar). SQLite é ok pra 1 VPS; se crescer muito, migrar pra Postgres depois.
+- **Backup (importante!):** o banco é o arquivo `server/prisma/dev.db` e os arquivos enviados ficam em `server/uploads/`, `server/media/` (imagens das Tools) e `server/tool-files/` (downloads das Tools). Faça backup periódico de todos (ex.: cron + scp pra outro lugar). SQLite é ok pra 1 VPS; se crescer muito, migrar pra Postgres depois.
+- **Check-up do banco (só leitura):** `cd server && node db-health.mjs` — integridade do SQLite, migrations, consistência de assinaturas/comissões/saques e arquivos do banco × disco.
 - **Logs:** `npm run api:logs` (PM2) e `/var/log/nginx/`.
 
 ## Pendências conhecidas (do código)
-- **CSP do Helmet está off** (`contentSecurityPolicy:false`) — configurar um CSP sob medida depois (fontes, Stripe, Rewardful, YouTube, 3D).
+- **CSP do Helmet está off** (`contentSecurityPolicy:false`) — configurar um CSP sob medida depois (fontes, Stripe, YouTube, 3D).
 - **Solana em mainnet** (SOL real). A **fee wallet** (`F3ymfo…`) está vazia — fundar 1x com ~0.001 SOL pra pagamentos pequenos não falharem por rent-exempt (em preços normais 0.5+ SOL não é problema).
-- **PIX** desabilitado na UI (não ativado no Stripe) — reabilitar quando ativar PIX no painel.
+- **PIX** é recebido pelo **Asaas** (não pelo Stripe) — ver `docs/PAGAMENTOS.md`. Configure o `ASAAS_WEBHOOK_TOKEN` (fecha o webhook pra quem não tem o token).

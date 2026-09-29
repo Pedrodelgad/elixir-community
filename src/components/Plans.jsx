@@ -146,7 +146,6 @@ export default function Plans({ onLoginRequest }) {
   const [loading, setLoading] = useState(false)      // método em processamento ('card'|'pix')
   const [subscribeError, setSubscribeError] = useState(null)
   const [status, setStatus] = useState(null)         // 'processing' | 'success' | 'cancel'
-  const [referral, setReferral] = useState(null)     // ID do afiliado (Rewardful), se a visita veio de um link
   const [walletPicker, setWalletPicker] = useState(null) // { planId, wallets } quando há +1 carteira
   const [pixOpen, setPixOpen] = useState(false)      // painel PIX aberto dentro do modal
   const [pixCpf, setPixCpf] = useState('')           // CPF (exigido pelo Asaas na 1ª compra)
@@ -155,14 +154,6 @@ export default function Plans({ onLoginRequest }) {
   const [pixCopied, setPixCopied] = useState(false)
 
   const payingPlan = plans.find(p => p.id === payFor) || null
-
-  // Captura o referral do Rewardful quando o script async terminar de carregar
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.rewardful !== 'function') return
-    window.rewardful('ready', () => {
-      if (window.Rewardful?.referral) setReferral(window.Rewardful.referral)
-    })
-  }, [])
 
   // Clique no plano.
   // - Gratuito: vai direto pro Discord (entra na comunidade, sem assinatura nem pagamento).
@@ -200,7 +191,7 @@ export default function Plans({ onLoginRequest }) {
     setSubscribeError(null)
     setLoading(method)
     try {
-      const url = await checkout(planId, method, referral)
+      const url = await checkout(planId, method)
       window.location.href = url
     } catch (err) {
       setSubscribeError(err.message || 'Erro ao iniciar o pagamento')

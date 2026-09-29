@@ -19,7 +19,6 @@
   --color-e-lo:      #3a5268;
 
   --animate-ticker:    ticker 35s linear infinite;
-  --animate-pulse-dot: pulse-dot 2s infinite;
   --animate-shimmer:   shimmer 2.5s ease-in-out infinite;
 }
 
@@ -28,42 +27,14 @@
   to   { transform: translateX(-50%); }
 }
 
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.3; }
-}
-
 @keyframes shimmer {
   0%   { transform: translateX(-100%) skewX(-12deg); }
   100% { transform: translateX(300%)  skewX(-12deg); }
 }
 
-@keyframes navScan {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(400%); }
-}
-
 @keyframes navLineSweep {
   0%   { transform: translateX(-120%); }
   100% { transform: translateX(500%); }
-}
-
-@keyframes blob1 {
-  0%, 100% { transform: translate(0px, 0px); }
-  33%      { transform: translate(380px, -200px); }
-  66%      { transform: translate(-260px, 160px); }
-}
-
-@keyframes blob2 {
-  0%, 100% { transform: translate(0px, 0px); }
-  40%      { transform: translate(-420px, 220px); }
-  70%      { transform: translate(280px, -150px); }
-}
-
-@keyframes blob3 {
-  0%, 100% { transform: translate(0px, 0px); }
-  30%      { transform: translate(300px, 250px); }
-  70%      { transform: translate(-340px, -180px); }
 }
 
 @layer base {
@@ -97,4 +68,101 @@
     outline-offset: 2px;
     border-radius: 4px;
   }
+}
+
+/* ─── Luzes que pulsam pelo site + tipografia do topo (Hero) ─── */
+/* Brilhos azuis que "respiram" atrás das seções (só opacity/transform = leve) */
+@keyframes glow-breathe {
+  0%, 100% { opacity: .45; transform: translate(-50%, -50%) scale(.94); }
+  50%      { opacity: 1;   transform: translate(-50%, -50%) scale(1.06); }
+}
+/* Feixes de luz do fundo fixo respirando */
+@keyframes beam-breathe {
+  0%, 100% { opacity: .5; }
+  50%      { opacity: 1; }
+}
+/* Pulso de brilho (título "On-Chain" e botão principal) */
+@keyframes glow-pulse {
+  0%, 100% { opacity: .55; }
+  50%      { opacity: 1; }
+}
+
+.hero-eyebrow { display: flex; align-items: center; justify-content: center; gap: 18px; margin-bottom: 30px; }
+.hero-eyebrow i { display: block; width: 56px; height: 1px; }
+.hero-eyebrow i:first-child { background: linear-gradient(90deg, transparent, rgba(122,167,255,.55)); }
+.hero-eyebrow i:last-child  { background: linear-gradient(90deg, rgba(122,167,255,.55), transparent); }
+.hero-eyebrow span { font: 600 12px 'Inter', sans-serif; letter-spacing: .55em; margin-right: -.55em; color: rgba(205,222,255,.82); }
+
+.hero-title { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 700; font-size: clamp(44px, 13.4vw, 136px);
+  line-height: .96; letter-spacing: -.045em; margin: 0 0 34px; }
+/* "Comunidade": branco perolado com brilho suave */
+.hero-t1 { display: inline-block; padding-bottom: .04em;
+  background: linear-gradient(180deg, #ffffff 0%, #eef2ff 48%, #c3d0f2 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 24px rgba(170,195,255,.30)); }
+/* "On-Chain": azul com brilho neon que pulsa (camada de brilho borrada atrás do texto) */
+.hero-t2-wrap { position: relative; display: inline-block; padding-bottom: .06em; }
+.hero-t2 { position: relative;
+  background: linear-gradient(100deg, #b5d6ff 0%, #6aa6ff 38%, #3b7dff 72%, #2f6dff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hero-t2-glow { position: absolute; inset: 0; color: #3f86ff; filter: blur(22px); opacity: .75; pointer-events: none; user-select: none;
+  animation: glow-pulse 4.2s ease-in-out infinite; }
+
+.hero-sub { margin: 0 auto 46px; font: 400 clamp(18px, 2.1vw, 25px)/1.6 'Inter', sans-serif; letter-spacing: -.005em; }
+.hero-sub .l1 { color: rgba(240,244,255,.94); }
+.hero-sub .l2 { color: #8db4ff; }
+
+/* Botão principal: gradiente vivo + halo que pulsa + divisor entre ícone e texto.
+   Halo (::before) e fundo (::after) são camadas z-index -1 dentro do próprio botão (isolation):
+   o fundo vem depois no DOM, então cobre o halo — e continua assim no hover (transform/filter). */
+.hero-cta { position: relative; isolation: isolate; display: inline-flex; align-items: center; gap: 16px; padding: 18px 40px; border-radius: 999px;
+  font: 600 16px 'Inter', sans-serif; color: #fff;
+  box-shadow: 0 0 0 1px rgba(125,175,255,.5), 0 10px 36px rgba(30,90,255,.45);
+  transition: transform .3s cubic-bezier(.22,1,.36,1), filter .3s; }
+.hero-cta::before { content: ""; position: absolute; inset: -16px -18px; border-radius: inherit; z-index: -1; pointer-events: none;
+  background: radial-gradient(closest-side, rgba(70,140,255,.65), transparent); filter: blur(14px);
+  animation: glow-pulse 3.6s ease-in-out infinite; }
+.hero-cta::after { content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: -1; pointer-events: none;
+  background: linear-gradient(135deg, #2f6bff 0%, #3f82ff 55%, #5b98ff 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,.35); }
+.hero-cta:hover { transform: translateY(-2px); filter: brightness(1.08); }
+.hero-cta .shine { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
+.hero-cta .shine::after { content: ""; position: absolute; top: 0; bottom: 0; width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.22), transparent); animation: shimmer 2.5s ease-in-out infinite; }
+.hero-cta .sep { width: 1px; height: 22px; background: rgba(255,255,255,.35); }
+
+/* Botão secundário: vidro escuro com borda azul */
+.hero-cta2 { display: inline-flex; align-items: center; gap: 14px; padding: 18px 34px; border-radius: 999px;
+  font: 500 16px 'Inter', sans-serif; color: rgba(214,226,255,.88);
+  background: rgba(8,20,52,.5); border: 1px solid rgba(122,167,255,.35);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+  transition: color .3s, border-color .3s, background .3s; }
+.hero-cta2 svg { color: #5b9bff; transition: transform .3s; }
+.hero-cta2:hover { color: #fff; border-color: rgba(140,185,255,.6); background: rgba(14,32,78,.55); }
+.hero-cta2:hover svg { transform: translateY(2px); }
+
+/* Indicador de rolagem no pé do topo: fio fino com uma luz descendo */
+@keyframes scroll-cue {
+  0%   { transform: translateY(-100%); opacity: 0; }
+  30%  { opacity: 1; }
+  100% { transform: translateY(260%); opacity: 0; }
+}
+.hero-scroll { position: absolute; left: 0; right: 0; bottom: 30px; z-index: 10; display: flex; justify-content: center; pointer-events: none; }
+.hero-scroll i { position: relative; display: block; width: 1px; height: 52px; overflow: hidden;
+  background: linear-gradient(rgba(122,167,255,.28), transparent); }
+.hero-scroll i::after { content: ""; position: absolute; left: 0; top: 0; width: 1px; height: 40%;
+  background: linear-gradient(transparent, #a9c8ff); box-shadow: 0 0 6px #6aa6ff;
+  animation: scroll-cue 2.4s cubic-bezier(.6,0,.4,1) infinite; }
+
+@media (max-width: 640px) {
+  .hero-cta, .hero-cta2 { padding: 15px 28px; font-size: 15px; }
+  .hero-sub { margin-bottom: 38px; }
+}
+@media (max-height: 720px) { .hero-scroll { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .hero-t2-glow, .hero-cta::before, .hero-cta .shine::after, .hero-scroll i::after, .e-breathe { animation: none !important; }
+}
+
+/* Feixes do fundo fixo respirando — só no desktop (no celular seriam 5 camadas de tela cheia na GPU) */
+.e-beam { position: absolute; inset: 0; }
+@media (min-width: 768px) and (prefers-reduced-motion: no-preference) {
+  .e-beam { animation: beam-breathe var(--d) ease-in-out var(--dl) infinite; will-change: opacity; }
 }

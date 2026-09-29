@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import AnimateIn from './AnimateIn'
+import GlowOrb from './GlowOrb'
 import { useAuth } from '../context/AuthContext'
 
 const PLAN_CONFIG = {
@@ -105,7 +106,8 @@ export default function Community({ onLoginRequest }) {
   }
 
   return (
-    <section id="comunidade" className="max-w-[1100px] mx-auto px-6 md:px-16 mb-44">
+    <section id="comunidade" className="relative isolate max-w-[1100px] mx-auto px-6 md:px-16 mb-44">
+      <GlowOrb top="35%" left="18%" size={640} strength={0.21} duration={8.5} delay={-3} />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-start">
 
         {/* COLUNA ESQUERDA — sticky */}

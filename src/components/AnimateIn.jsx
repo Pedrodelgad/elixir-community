@@ -1,36 +1,27 @@
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 
-const easeOut = [0.22, 1, 0.36, 1]
+// Curva "expo-out": arranca rápido e assenta devagar — entrada mais cinematográfica
+const easeOut = [0.16, 1, 0.3, 1]
 
+// Entrada ao rolar (uma vez por elemento): sobe, aparece e cresce de leve.
+// Só opacity/transform (leve até em celular). Quem pede menos animação no sistema vê tudo parado.
 export default function AnimateIn({
   children,
   delay = 0,
-  y = 28,
-  duration = 0.65,
+  y = 44,
+  duration = 0.95,
   className = '',
 }) {
+  const reduce = useReducedMotion()
   return (
     <motion.div
       className={className}
-      initial={{ opacity: 0, y }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: '-80px' }}
+      initial={reduce ? false : { opacity: 0, y, scale: 0.975 }}
+      whileInView={{ opacity: 1, y: 0, scale: 1 }}
+      viewport={{ once: true, margin: '0px 0px -12% 0px' }}
       transition={{ duration, delay, ease: easeOut }}
     >
       {children}
     </motion.div>
-  )
-}
-
-// Para listas com stagger automático
-export function AnimateList({ children, stagger = 0.1, baseDelay = 0 }) {
-  return (
-    <>
-      {children.map((child, i) => (
-        <AnimateIn key={i} delay={baseDelay + i * stagger}>
-          {child}
-        </AnimateIn>
-      ))}
-    </>
   )
 }

@@ -1,4 +1,5 @@
 import AnimateIn from './AnimateIn'
+import GlowOrb from './GlowOrb'
 
 const bad  = ['FOMO sem contexto', 'FUD absurdo todo ciclo', 'Ruído de feed infinito', 'Superficialidade empacotada', 'Calls sem leitura de mercado']
 const good = ['Contexto real antes do feed', 'Menos superficialidade. Mais leitura que vale.', 'Calls ao vivo com leitura no momento certo', 'Quem entra, opera']
@@ -12,7 +13,9 @@ const glassCard = {
 
 export default function Contrast() {
   return (
-    <section id="contrast" className="max-w-4xl mx-auto px-6 md:px-16 mb-44">
+    <section id="contrast" className="relative isolate max-w-4xl mx-auto px-6 md:px-16 mb-44">
+      <GlowOrb top="45%" left="6%" size={560} strength={0.2} duration={8} />
+      <GlowOrb top="62%" left="94%" size={480} color="91,152,255" strength={0.15} duration={10} delay={-4} />
       <AnimateIn>
         <p className="text-center text-[11px] font-bold tracking-[2px] text-e-muted uppercase mb-14">
           O mercado recompensa contexto. Não barulho.

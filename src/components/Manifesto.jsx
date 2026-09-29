@@ -1,11 +1,14 @@
 import AnimateIn from './AnimateIn'
+import GlowOrb from './GlowOrb'
 import { DiscordIcon } from './icons'
 
 const DISCORD_INVITE = 'https://discord.gg/elixiralpha'
 
 export default function Manifesto() {
   return (
-    <section className="px-6 md:px-16 mb-0">
+    <section className="relative isolate px-6 md:px-16 mb-0">
+      {/* halo que pulsa em volta do card (atrás dele) */}
+      <GlowOrb top="50%" left="50%" size={1000} strength={0.2} duration={6} />
       <AnimateIn>
         <div className="max-w-[1100px] mx-auto text-center px-8 md:px-20 py-28 rounded-2xl relative overflow-hidden" style={{
           background: 'linear-gradient(160deg, rgba(11,46,74,0.8) 0%, rgba(6,26,43,0.9) 60%, rgba(2,6,23,0.95) 100%)',
@@ -15,8 +18,9 @@ export default function Manifesto() {
         }}>
 
           {/* Glow */}
-          <div className="absolute -top-1/3 left-1/2 -translate-x-1/2 w-[600px] h-[400px] pointer-events-none" style={{
-            background: 'radial-gradient(ellipse, rgba(58,123,213,0.2) 0%, transparent 65%)',
+          <div className="e-breathe absolute -top-1/3 left-1/2 -translate-x-1/2 w-[600px] h-[400px] pointer-events-none" style={{
+            background: 'radial-gradient(ellipse, rgba(58,123,213,0.24) 0%, transparent 65%)',
+            animation: 'glow-pulse 6s ease-in-out infinite',
           }} />
 
           <span className="relative text-[11px] font-bold tracking-[3px] uppercase block mb-6" style={{ color: 'rgba(122,167,255,0.6)' }}>

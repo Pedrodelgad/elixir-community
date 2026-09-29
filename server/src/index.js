@@ -787,11 +787,10 @@ app.delete('/api/subscriptions/:userId', auth, adminOnly, async (req, res) => {
 
 // Cria a sessão de checkout na Stripe.
 // method 'card' → assinatura recorrente; method 'pix' → pagamento único (avulso).
-// referral (Rewardful) é repassado como client_reference_id quando presente.
 app.post('/api/checkout', auth, payLimiter, async (req, res) => {
   if (!stripe) return res.status(503).json({ error: 'Pagamento ainda não configurado' })
 
-  const { plan: planId, method, referral } = req.body
+  const { plan: planId, method } = req.body
   const plan = await prisma.plan.findUnique({ where: { id: planId || '' } })
   if (!plan || !plan.durationDays || !plan.priceBrl) return res.status(400).json({ error: 'Plano inválido' })
   // Discord NÃO é exigido aqui — vinculação acontece depois do pagamento confirmado.
@@ -811,8 +810,6 @@ app.post('/api/checkout', auth, payLimiter, async (req, res) => {
     customer_email: req.user.email,
     metadata: { userId: String(req.user.id), planId: plan.id },
   }
-  // Stripe rejeita client_reference_id vazio — só envia quando o afiliado existe
-  if (referral) params.client_reference_id = referral
 
   try {
     let session
@@ -1401,11 +1398,16 @@ app.post('/api/webhooks/asaas', async (req, res) => {
     if (payout.status === 'paid') return res.json({ received: true }) // já finalizado (idempotência)
 
     // Não confia no payload: busca o status AUTORITATIVO no Asaas e age por ele (anti-spoof).
-    let realStatus = String(transfer.status || '')
-    if (asaasConfigured && (payout.externalRef || transfer.id)) {
-      try { realStatus = (await getTransfer(payout.externalRef || transfer.id)).status }
-      catch (e) { console.error('[Asaas] getTransfer falhou:', e.message); return res.status(500).json({ error: 'retry' }) }
-    }
+    // Sem como conferir no Asaas, não age (o reconciliador resolve depois).
+    const transferId = payout.externalRef || transfer.id
+    if (!asaasConfigured || !transferId) return res.json({ received: true })
+    let realStatus
+    try {
+      const real = await getTransfer(transferId)
+      // id veio do payload (saque sem id salvo): só vale se a transferência for mesmo deste saque
+      if (!payout.externalRef && String(real.externalReference) !== String(payoutId)) return res.json({ received: true })
+      realStatus = real.status
+    } catch (e) { console.error('[Asaas] getTransfer falhou:', e.message); return res.status(500).json({ error: 'retry' }) }
 
     if (realStatus === 'DONE') {
       const now = new Date()

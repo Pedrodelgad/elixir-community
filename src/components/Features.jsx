@@ -1,4 +1,5 @@
 import AnimateIn from './AnimateIn'
+import GlowOrb from './GlowOrb'
 
 const glass = {
   background: 'linear-gradient(145deg, rgba(255,255,255,0.045) 0%, rgba(255,255,255,0.02) 100%)',
@@ -59,7 +60,9 @@ const NetworkIcon = () => (
 
 export default function Features() {
   return (
-    <section className="max-w-[1100px] mx-auto px-6 md:px-16 mb-44">
+    <section className="relative isolate max-w-[1100px] mx-auto px-6 md:px-16 mb-44">
+      <GlowOrb top="30%" left="86%" size={720} strength={0.22} duration={9} delay={-2} />
+      <GlowOrb top="82%" left="10%" size={520} strength={0.15} duration={11} delay={-6} />
 
       <AnimateIn>
         <div className="text-center mb-16">

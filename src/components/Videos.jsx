@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import AnimateIn from './AnimateIn'
+import GlowOrb from './GlowOrb'
 import { useAuth } from '../context/AuthContext'
 
 // Mock — futuramente vem do backend + sincronização com a API do Discord,
@@ -72,7 +73,8 @@ export default function Videos({ onLoginRequest }) {
   const isAlpha = user?.plan === 'alpha'
 
   return (
-    <section id="videos" className="max-w-[1100px] mx-auto px-6 md:px-16 mb-44">
+    <section id="videos" className="relative isolate max-w-[1100px] mx-auto px-6 md:px-16 mb-44">
+      <GlowOrb top="55%" left="50%" size={820} strength={0.17} duration={10} delay={-1} />
 
       {/* Header */}
       <AnimateIn>

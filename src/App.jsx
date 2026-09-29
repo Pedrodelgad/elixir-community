@@ -12,6 +12,7 @@ import Manifesto from './components/Manifesto'
 import Footer from './components/Footer'
 import LoginModal from './components/LoginModal'
 import AmbientBeams from './components/AmbientBeams'
+import ScrollProgress from './components/ScrollProgress'
 
 // Preload do GLB da logo 3D — começa a baixar já no load da página
 // (o <link rel="preload"> no index.html já disparou antes disso; aqui é só garantia)
@@ -54,14 +55,17 @@ export default function App() {
         transitionDelay: visible ? '100ms' : '0ms',
         pointerEvents: visible ? 'auto' : 'none',
         position: 'relative',
+        // corta na horizontal os brilhos que passam da borda (clip não cria rolagem → sticky segue funcionando)
+        overflowX: 'clip',
       }}>
         {mounted && (
           <>
             <AmbientBeams />
 
             <div style={{ position: 'relative', zIndex: 1 }}>
+              <ScrollProgress />
               <Nav onLoginRequest={() => setLoginOpen(true)} />
-              <Hero />
+              <Hero ready={visible} />
               <Contrast />
               <Features />
               <Community onLoginRequest={() => setLoginOpen(true)} />
