@@ -972,21 +972,35 @@ async function handleSessionPaid(session) {
   })
 }
 
+// Id da assinatura de uma fatura. Na API nova da Stripe (2025-03-31 em diante — a que o SDK usa)
+// o campo saiu da raiz (invoice.subscription) e foi pra invoice.parent.subscription_details.
+function invoiceSubscriptionId(inv) {
+  const s = inv?.subscription ?? inv?.parent?.subscription_details?.subscription
+  return typeof s === 'string' ? s : s?.id || null
+}
+
 // Renovação automática do cartão (fatura de ciclo paga) → estende a validade
 async function handleRenewal(invoice) {
-  const sub = await stripe.subscriptions.retrieve(invoice.subscription)
+  const sub = await stripe.subscriptions.retrieve(invoiceSubscriptionId(invoice))
   const userId = Number(sub.metadata?.userId)
   const planId = sub.metadata?.planId
   if (!userId || !planId) return
   const plan = await prisma.plan.findUnique({ where: { id: planId } })
   const periodEnd = sub.current_period_end || sub.items?.data?.[0]?.current_period_end
   const expiresAt = periodEnd ? new Date(periodEnd * 1000) : new Date(Date.now() + (plan?.durationDays || 30) * 86400000)
-  await activateAlpha({
-    userId, planId, expiresAt, recurring: true, isRenewal: true,
-    priceSol: plan?.priceSol || 0,
-    priceBrl: invoice.amount_paid || 0,
-    stripeCustomerId: sub.customer, stripeSubscriptionId: sub.id,
-  })
+  // Nunca encurta a validade: se a pessoa trocou pra outro plano (ex.: vitalício) e a assinatura
+  // antiga do cartão seguiu cobrando, a renovação dela não pode sobrescrever o plano novo.
+  const local = await prisma.subscription.findUnique({ where: { userId } })
+  if (local && local.expiresAt > expiresAt) {
+    console.warn(`[Stripe] renovação de ${sub.id} ignorada: user=${userId} já tem validade maior (${planId} → ${local.planId})`)
+  } else {
+    await activateAlpha({
+      userId, planId, expiresAt, recurring: true, isRenewal: true,
+      priceSol: plan?.priceSol || 0,
+      priceBrl: invoice.amount_paid || 0,
+      stripeCustomerId: sub.customer, stripeSubscriptionId: sub.id,
+    })
+  }
 
   // Afiliados: registra a renovação (first-only → não gera comissão, mas fica no ledger)
   await recordPaymentAndCommission({
@@ -1030,7 +1044,7 @@ async function stripeWebhook(req, res) {
         break
       case 'invoice.paid': {
         const inv = event.data.object
-        if (inv.billing_reason === 'subscription_cycle' && inv.subscription) await handleRenewal(inv)
+        if (inv.billing_reason === 'subscription_cycle' && invoiceSubscriptionId(inv)) await handleRenewal(inv)
         break
       }
       case 'customer.subscription.deleted':
@@ -1134,10 +1148,19 @@ async function recordPaymentAndCommission({ userId, planId, amountBrl = 0, metho
 // Descobre o nosso userId a partir de um charge da Stripe (reembolso/chargeback não trazem metadata direto)
 async function userIdFromCharge(charge) {
   try {
-    if (charge.invoice) { // cartão: charge → invoice → subscription.metadata.userId
-      const inv = await stripe.invoices.retrieve(charge.invoice)
-      if (inv.subscription) {
-        const sub = await stripe.subscriptions.retrieve(inv.subscription)
+    // cartão: charge → invoice → subscription.metadata.userId. Na API nova a charge não traz mais
+    // `invoice`; o vínculo fica no InvoicePayment (achado pelo payment_intent).
+    let invoiceId = charge.invoice || null
+    if (!invoiceId && charge.payment_intent) {
+      const ip = await stripe.invoicePayments.list({ payment: { type: 'payment_intent', payment_intent: charge.payment_intent }, limit: 1 })
+        .catch(e => { console.error('[Affiliate] invoicePayments:', e.message); return null }) // falhar aqui não pode pular o caminho do PIX abaixo
+      const i = ip?.data?.[0]?.invoice
+      invoiceId = typeof i === 'string' ? i : i?.id || null
+    }
+    if (invoiceId) {
+      const subId = invoiceSubscriptionId(await stripe.invoices.retrieve(invoiceId))
+      if (subId) {
+        const sub = await stripe.subscriptions.retrieve(subId)
         const id = Number(sub.metadata?.userId); if (id) return id
       }
     }
@@ -2314,9 +2337,33 @@ async function checkExpiredPlans() {
   }
 }
 
+// Rede de segurança da renovação do cartão: se o webhook da fatura se perder, a assinatura local
+// fica vencida no site mesmo com a Stripe cobrando. Consulta a Stripe pras assinaturas de cartão
+// vencidas e, se a fatura mais recente foi paga, aplica a renovação (idempotente pelo id da fatura).
+async function syncCardRenewals() {
+  if (!stripe) return
+  const stale = await prisma.subscription.findMany({
+    where: { expiresAt: { lt: new Date() }, stripeSubscriptionId: { not: null } },
+  })
+  for (const local of stale) {
+    try {
+      const sub = await stripe.subscriptions.retrieve(local.stripeSubscriptionId, { expand: ['latest_invoice'] })
+      const inv = sub.latest_invoice
+      if (!['active', 'trialing'].includes(sub.status) || inv?.status !== 'paid' || !invoiceSubscriptionId(inv)) continue
+      const periodEnd = sub.current_period_end || sub.items?.data?.[0]?.current_period_end
+      if (!periodEnd || periodEnd * 1000 <= local.expiresAt.getTime()) continue
+      await handleRenewal(inv)
+      console.log(`[Stripe] renovação recuperada pela sincronização: user=${local.userId}`)
+    } catch (e) {
+      console.error(`[Stripe] sync renovação user=${local.userId}: ${e.message}`)
+    }
+  }
+}
+
 // Roda imediatamente ao iniciar e depois a cada hora
 checkExpiredPlans()
-setInterval(checkExpiredPlans, 60 * 60 * 1000) // 1 hora
+syncCardRenewals()
+setInterval(() => { checkExpiredPlans(); syncCardRenewals() }, 60 * 60 * 1000) // 1 hora
 
 // Gateway Discord: detecta quando alguém entra no servidor e dá o cargo Alpha
 startGateway(prisma, addAlphaRole, sendDM)

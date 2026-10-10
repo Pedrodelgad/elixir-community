@@ -84,15 +84,18 @@ export default function Features() {
       {/* BENTO GRID */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 auto-rows-auto">
 
-        {/* CARD GRANDE — Calls ao vivo */}
+        {/* CARD GRANDE — Ecossistema completo */}
         <AnimateIn delay={0.05} className="md:col-span-7">
           <div className="rounded-2xl p-8 h-full min-h-[320px] flex flex-col justify-between" style={glassBlue}
             onMouseEnter={e => hoverIn(e, true)} onMouseLeave={e => hoverOut(e, true)}>
             <div>
               <CallIcon />
-              <h3 className="text-xl font-bold mt-5 mb-2 text-e-hi">Calls ao vivo</h3>
-              <p className="text-[14px] text-e-text/70 leading-relaxed max-w-xs">
-                Com leitura no momento certo. Entrada, saída e contexto sem atraso.
+              <h3 className="text-xl font-bold mt-5 mb-2 text-e-hi">Ecossistema completo</h3>
+              <p className="text-[14px] text-e-text/70 leading-relaxed max-w-md">
+                A Elixir é uma comunidade ativa e 100% integrada no mercado. Aqui você acompanha o mundo real do “Crypto Space” e como outros traders renomados vivem o seu dia a dia nas redes.
+              </p>
+              <p className="text-[14px] text-e-text/70 leading-relaxed max-w-md mt-3">
+                Além da infraestrutura completa da comunidade, com Bots e Ferramentas para auxiliar nos seus Trades.
               </p>
             </div>
           </div>
@@ -101,14 +104,14 @@ export default function Features() {
         {/* Coluna direita — 2 cards menores */}
         <div className="md:col-span-5 flex flex-col gap-4">
 
-          {/* CARD — Narrativas */}
+          {/* CARD — Conteúdo denso */}
           <AnimateIn delay={0.15}>
             <div className="rounded-2xl p-8 flex-1" style={glass}
               onMouseEnter={e => hoverIn(e, false)} onMouseLeave={e => hoverOut(e, false)}>
               <NarrativaIcon />
-              <h3 className="text-lg font-bold mt-5 mb-2 text-e-hi">Narrativas filtradas</h3>
+              <h3 className="text-lg font-bold mt-5 mb-2 text-e-hi">Conteúdo denso</h3>
               <p className="text-[13px] text-e-text/70 leading-relaxed">
-                Oportunidades curadas antes de chegarem no feed. Menos ruído, mais sinal.
+                Aulas completas e de qualidade, a informação é o ouro.
               </p>
             </div>
           </AnimateIn>
