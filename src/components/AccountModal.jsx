@@ -13,6 +13,9 @@ const focusOut = e => { e.target.style.borderColor = 'rgba(255,255,255,0.08)'; e
 const labelCls = "block text-[10px] font-bold mb-2 tracking-[2px] uppercase"
 const labelStyle = { color: 'rgba(122,167,255,0.55)', fontFamily: "'Inter', sans-serif" }
 
+const PLAN_NAMES = { 'alpha-1m': 'Mensal', 'alpha-3m': 'Trimestral', 'alpha-1y': 'Vitalício' }
+const fmtDate = (d) => new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+
 const PLAN_CONFIG = {
   alpha: { label: 'Alpha', icon: '⚡', color: '#7AA7FF', bg: 'rgba(58,123,213,0.18)', border: 'rgba(122,167,255,0.3)' },
   normal: { label: 'Elixir', icon: '✦', color: '#8FA4C4', bg: 'rgba(143,164,196,0.1)', border: 'rgba(143,164,196,0.2)' },
@@ -33,7 +36,7 @@ function Feedback({ kind, children }) {
 }
 
 export default function AccountModal({ open, onClose }) {
-  const { user, updateName, setup2fa, enable2fa, disable2fa, disable2faSendEmail } = useAuth()
+  const { user, updateName, setup2fa, enable2fa, disable2fa, disable2faSendEmail, setAutoRenew } = useAuth()
 
   const [name, setName] = useState('')
   const [nameMsg, setNameMsg] = useState(null)   // { kind, text }
@@ -58,6 +61,11 @@ export default function AccountModal({ open, onClose }) {
   const [twoFaEmailSentTo, setTwoFaEmailSentTo] = useState('') // recuperação por email ao desativar
   const [twoFaEmailDevCode, setTwoFaEmailDevCode] = useState('')
 
+  // Plano: cancelar/reativar a renovação automática do cartão (com passo de confirmação)
+  const [cancelConfirm, setCancelConfirm] = useState(false)
+  const [planMsg, setPlanMsg] = useState(null)
+  const [planBusy, setPlanBusy] = useState(false)
+
   if (!user) return null
 
   const resetAll = () => {
@@ -65,6 +73,17 @@ export default function AccountModal({ open, onClose }) {
     setPwStep('idle'); setSentTo(''); setDevCode(''); setCode(''); setNewPassword(''); setPwMsg(null); setPwBusy(false)
     setTwoFaStep('idle'); setTwoFaQr(''); setTwoFaSecret(''); setTwoFaCode(''); setTwoFaMsg(null); setTwoFaBusy(false)
     setTwoFaEmailSentTo(''); setTwoFaEmailDevCode('')
+    setCancelConfirm(false); setPlanMsg(null); setPlanBusy(false)
+  }
+
+  const changeAutoRenew = async (renew) => {
+    setPlanBusy(true); setPlanMsg(null)
+    try {
+      await setAutoRenew(renew)
+      setCancelConfirm(false)
+      setPlanMsg({ kind: 'ok', text: renew ? 'Renovação automática reativada.' : 'Plano cancelado — você não será mais cobrado.' })
+    } catch (err) { setPlanMsg({ kind: 'err', text: err.message }) }
+    finally { setPlanBusy(false) }
   }
 
   const startSetup2fa = async () => {
@@ -243,6 +262,53 @@ export default function AccountModal({ open, onClose }) {
                     {user.email}
                   </div>
                 </div>
+
+                {/* ── Seu plano (cancelar a cobrança automática) ── */}
+                {user.billing && (() => {
+                  const planName = PLAN_NAMES[user.planId] || 'Alpha'
+                  const until = user.expiresAt && user.planId !== 'alpha-1y' ? fmtDate(user.expiresAt) : null
+                  const text = user.billing === 'auto'
+                    ? <>Renova automaticamente no cartão{until ? <> em <strong style={{ color: 'rgba(190,210,235,0.8)' }}>{until}</strong></> : ''}.</>
+                    : user.billing === 'canceled'
+                      ? <>Cancelado — você não será mais cobrado.{until ? <> Seu acesso Alpha vale até <strong style={{ color: 'rgba(190,210,235,0.8)' }}>{until}</strong>.</> : ''}</>
+                      : user.planId === 'alpha-1y'
+                        ? 'Acesso vitalício — sem cobrança automática.'
+                        : <>Pagamento único — sem cobrança automática.{until ? <> Vale até <strong style={{ color: 'rgba(190,210,235,0.8)' }}>{until}</strong>.</> : ''}</>
+                  return (
+                    <div className="mb-6">
+                      <label className={labelCls} style={labelStyle}>Seu plano</label>
+                      <div className="px-4 py-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)', fontFamily: "'Inter', sans-serif" }}>
+                        <div className="text-[13px] font-semibold text-white mb-1">Alpha {planName}</div>
+                        <p className="text-[12px] leading-relaxed" style={{ color: 'rgba(190,210,235,0.5)' }}>{text}</p>
+
+                        {user.billing === 'auto' && !cancelConfirm && (
+                          <button onClick={() => { setCancelConfirm(true); setPlanMsg(null) }}
+                            className="mt-3 text-[12px] font-medium px-3 py-1.5 rounded-lg" style={{ color: 'rgba(255,140,140,0.85)', background: 'rgba(220,60,60,0.08)', border: '1px solid rgba(220,80,80,0.2)', cursor: 'pointer' }}>
+                            Cancelar plano
+                          </button>
+                        )}
+                        {user.billing === 'auto' && cancelConfirm && (
+                          <div className="mt-3 flex flex-col gap-2.5">
+                            <p className="text-[12px] leading-relaxed" style={{ color: 'rgba(255,190,190,0.8)' }}>
+                              A cobrança automática para agora{until ? <> e você continua Alpha até <strong>{until}</strong></> : ''}. Depois disso o acesso Alpha é removido. Pode reativar antes dessa data se mudar de ideia.
+                            </p>
+                            <div className="flex gap-2">
+                              <button type="button" onClick={() => setCancelConfirm(false)} disabled={planBusy} className="flex-1 py-2.5 rounded-xl text-[13px]" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(190,210,235,0.7)', cursor: 'pointer' }}>Voltar</button>
+                              <button type="button" onClick={() => changeAutoRenew(false)} disabled={planBusy} className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold text-white disabled:opacity-40" style={{ background: 'linear-gradient(135deg, #c0392b, #e74c3c)', cursor: planBusy ? 'wait' : 'pointer' }}>{planBusy ? '…' : 'Confirmar cancelamento'}</button>
+                            </div>
+                          </div>
+                        )}
+                        {user.billing === 'canceled' && (
+                          <button onClick={() => changeAutoRenew(true)} disabled={planBusy}
+                            className="mt-3 text-[12px] font-medium px-3 py-1.5 rounded-lg disabled:opacity-50" style={{ background: 'rgba(58,100,220,0.16)', border: '1px solid rgba(100,150,255,0.22)', color: 'rgba(160,195,255,0.9)', cursor: planBusy ? 'wait' : 'pointer' }}>
+                            {planBusy ? '…' : 'Reativar renovação'}
+                          </button>
+                        )}
+                      </div>
+                      {planMsg && <div className="mt-2"><Feedback kind={planMsg.kind}>{planMsg.text}</Feedback></div>}
+                    </div>
+                  )
+                })()}
 
                 {/* ── Trocar nome ── */}
                 <form onSubmit={saveName} className="mb-7">

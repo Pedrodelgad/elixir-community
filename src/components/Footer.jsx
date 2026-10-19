@@ -10,7 +10,6 @@ const SOCIAL = [
 export default function Footer() {
   const sentinelRef = useRef(null)
   const [visible, setVisible] = useState(false)
-  const [jumpscare, setJumpscare] = useState(false)
 
   useEffect(() => {
     const el = sentinelRef.current
@@ -23,40 +22,9 @@ export default function Footer() {
     return () => obs.disconnect()
   }, [])
 
-  const handleCumpa = (e) => {
-    e.preventDefault()
-    setJumpscare(true)
-    setTimeout(() => setJumpscare(false), 2000)
-  }
-
   return (
     <>
       <div ref={sentinelRef} style={{ height: 1 }} />
-
-      {/* Jumpscare */}
-      {jumpscare && (
-        <div
-          style={{
-            position: 'fixed', inset: 0, zIndex: 9999,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: '#000',
-            animation: 'jumpscareIn 0.08s ease-out',
-          }}
-          onClick={() => setJumpscare(false)}
-        >
-          <img
-            src="/imgs/cumpa.jpg"
-            alt="cumpa"
-            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
-          />
-          <style>{`
-            @keyframes jumpscareIn {
-              0% { transform: scale(1.08); opacity: 0; }
-              100% { transform: scale(1); opacity: 1; }
-            }
-          `}</style>
-        </div>
-      )}
 
       <footer style={{
         position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 40,
@@ -68,7 +36,7 @@ export default function Footer() {
         transition: 'transform 0.55s cubic-bezier(0.22, 1, 0.36, 1)',
       }}>
         <div className="flex items-center justify-between px-16 py-4">
-          <span className="text-[13px] text-e-lo">© 2025 Elixir Community</span>
+          <span className="text-[13px] text-e-lo">© {new Date().getFullYear()} Elixir Community</span>
           <div className="flex gap-6">
             {SOCIAL.map(({ label, href, Icon }) => (
               <a key={label} href={href}
@@ -77,9 +45,6 @@ export default function Footer() {
                 {Icon && <Icon size={14} />}{label}
               </a>
             ))}
-            <a href="#" onClick={handleCumpa} className="text-[13px] text-e-lo hover:text-e-text transition-colors duration-200">
-              Cumpa
-            </a>
           </div>
         </div>
       </footer>

@@ -169,6 +169,10 @@ function toClient(user) {
     plan: active || user.role === 'admin' ? 'alpha' : 'normal',
     planId: active ? sub.planId : null,
     expiresAt: active ? sub.expiresAt : null,
+    // Cobrança: 'auto' = cartão renovando sozinho · 'canceled' = renovação cancelada (vale até o fim do período)
+    // · 'once' = pagamento único (PIX/SOL/vitalício/liberado à mão) · null = sem plano.
+    // Cartão conta mesmo vencido no site (pagamento atrasado): a Stripe segue tentando cobrar, então tem que dar pra cancelar.
+    billing: sub?.stripeSubscriptionId ? (sub.status === 'canceled' ? 'canceled' : 'auto') : active ? 'once' : null,
     discordLinked: !!user.discordId,
     twoFactorEnabled: !!user.twoFactorEnabled,
     welcomeSeen: !!user.welcomeSeenAt,
@@ -849,6 +853,27 @@ app.post('/api/checkout', auth, payLimiter, async (req, res) => {
   }
 })
 
+// Cancelar plano (cartão): desliga a renovação automática na Stripe. O Alpha segue até o fim do período já
+// pago; aí a Stripe encerra a assinatura e o webhook customer.subscription.deleted tira o cargo.
+// Reativar desfaz enquanto o período não acabou. PIX/SOL/vitalício não têm cobrança automática.
+async function setCardAutoRenew(req, res, renew) {
+  const sub = req.user.subscription
+  if (!sub?.stripeSubscriptionId) return res.status(400).json({ error: 'Seu plano não tem cobrança automática' })
+  if (!stripe) return res.status(503).json({ error: 'Pagamento ainda não configurado' })
+  try {
+    await stripe.subscriptions.update(sub.stripeSubscriptionId, { cancel_at_period_end: !renew })
+  } catch (e) {
+    console.error(`[Stripe] ${renew ? 'reativar' : 'cancelar'} renovação user=${req.user.id}: ${e.message}`)
+    return res.status(502).json({ error: renew ? 'Não foi possível reativar agora — tente de novo' : 'Não foi possível cancelar agora — tente de novo' })
+  }
+  await prisma.subscription.update({ where: { id: sub.id }, data: { status: renew ? 'active' : 'canceled' } })
+  console.log(`[Stripe] renovação ${renew ? 'reativada' : 'cancelada'} pelo membro user=${req.user.id} sub=${sub.stripeSubscriptionId}`)
+  const user = await prisma.user.findUnique({ where: { id: req.user.id }, include: { subscription: true } })
+  res.json({ user: toClient(user) })
+}
+app.post('/api/account/subscription/cancel', auth, payLimiter, (req, res) => setCardAutoRenew(req, res, false))
+app.post('/api/account/subscription/resume', auth, payLimiter, (req, res) => setCardAutoRenew(req, res, true))
+
 /* ─── Checkout PIX via Asaas (recebimento) ─── */
 // Cria uma cobrança PIX no Asaas e devolve o QR + copia-e-cola. O Alpha é liberado no webhook
 // PAYMENT_RECEIVED (ou no polling de status, como rede de segurança). O dinheiro cai no saldo do
@@ -1014,6 +1039,12 @@ async function handleRenewal(invoice) {
 async function handleSubscriptionDeleted(sub) {
   const userId = Number(sub.metadata?.userId)
   if (!userId) return
+  // Só encerra se for a assinatura ATUAL dele. Quem cancelou o mensal e depois comprou outro plano
+  // (PIX, SOL, vitalício) não pode perder o plano novo quando o mensal antigo acaba.
+  const local = await prisma.subscription.findUnique({ where: { userId } })
+  if (local && local.stripeSubscriptionId !== sub.id) {
+    return console.log(`[Stripe] assinatura ${sub.id} encerrada, mas user=${userId} já está em outro plano (${local.planId}) — mantido`)
+  }
   const user = await prisma.user.findUnique({ where: { id: userId } })
   if (user?.discordId) {
     await removeAlphaRole(user.discordId).catch(e => console.error(`[Stripe] remover cargo: ${e.message}`))
@@ -1050,6 +1081,14 @@ async function stripeWebhook(req, res) {
       case 'customer.subscription.deleted':
         await handleSubscriptionDeleted(event.data.object)
         break
+      case 'customer.subscription.updated': { // cancelamento/reativação feito fora do site (ex.: painel da Stripe)
+        const s = event.data.object
+        await prisma.subscription.updateMany({
+          where: { stripeSubscriptionId: s.id },
+          data: { status: s.cancel_at_period_end || s.cancel_at ? 'canceled' : 'active' },
+        })
+        break
+      }
       case 'charge.refunded':          // reembolso → estorna a comissão do afiliado
       case 'charge.dispute.created': { // chargeback → idem
         const charge = event.type === 'charge.refunded' ? event.data.object : event.data.object.charge

@@ -70,7 +70,7 @@ Cliente paga o PIX  ─────────┤
 
 | Endpoint | Provedor | Eventos |
 |---|---|---|
-| `POST /api/webhooks/stripe` | Stripe | `checkout.session.completed`, `invoice.paid` (renovação), `customer.subscription.deleted`, `charge.refunded` |
+| `POST /api/webhooks/stripe` | Stripe | `checkout.session.completed`, `invoice.paid` (renovação), `customer.subscription.updated` (cancelamento feito fora do site), `customer.subscription.deleted`, `charge.refunded` |
 | `POST /api/webhooks/asaas` | Asaas | **`PAYMENT_RECEIVED` / `PAYMENT_CONFIRMED`** (venda PIX) · `TRANSFER_DONE/FAILED/CANCELLED` (saque afiliado) |
 
 O webhook do Asaas valida o header `asaas-access-token` contra `ASAAS_WEBHOOK_TOKEN` (se
@@ -79,6 +79,17 @@ configurado) e **nunca confia no payload** — reconsulta o status real no Asaas
 > ⚠️ **Habilitar no painel Asaas** os eventos de **Pagamento** (`PAYMENT_RECEIVED`,
 > `PAYMENT_CONFIRMED`), além dos de Transferência que já existem. Sem isso, a liberação depende só
 > do polling do front (que só roda com o modal aberto).
+
+## Cancelar plano (cartão)
+
+O membro cancela no perfil (seção "Seu plano"). `POST /api/account/subscription/cancel` liga
+`cancel_at_period_end` na Stripe e marca a assinatura local como `status: 'canceled'`: para de cobrar,
+mas o Alpha vale até o fim do período já pago. No fim, a Stripe manda `customer.subscription.deleted` e
+o cargo sai. `POST /api/account/subscription/resume` desfaz antes disso. PIX/SOL/vitalício não têm
+cobrança automática (o perfil só informa). `toClient().billing` = `auto | canceled | once | null`.
+
+O `customer.subscription.deleted` só remove o plano se for a assinatura **atual** do membro — quem
+cancelou o mensal e comprou outro plano (PIX/SOL/vitalício) não perde o plano novo.
 
 ## Saque de afiliado (payout) + reconciliação
 

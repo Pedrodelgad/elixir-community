@@ -149,8 +149,15 @@ export function AuthProvider({ children }) {
     return d.user
   }
 
+  // Cancelar plano = desliga a renovação automática do cartão (vale até o fim do período). resume desfaz.
+  const setAutoRenew = async (renew) => {
+    const d = await api(`/api/account/subscription/${renew ? 'resume' : 'cancel'}`, { method: 'POST' })
+    setUser(d.user)
+    return d.user
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, register, login, loginVerify2fa, login2faSendEmail, setup2fa, enable2fa, disable2fa, disable2faSendEmail, logout, checkout, checkoutPix, pixStatus, cryptoIntent, cryptoConfirm, refresh, joinAffiliate, updateName }}>
+    <AuthContext.Provider value={{ user, loading, register, login, loginVerify2fa, login2faSendEmail, setup2fa, enable2fa, disable2fa, disable2faSendEmail, logout, checkout, checkoutPix, pixStatus, cryptoIntent, cryptoConfirm, refresh, joinAffiliate, updateName, setAutoRenew }}>
       {children}
     </AuthContext.Provider>
   )

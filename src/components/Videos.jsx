@@ -6,12 +6,12 @@ import { useAuth } from '../context/AuthContext'
 // Mock — futuramente vem do backend + sincronização com a API do Discord,
 // que valida se o plano Alpha do membro ainda está dentro do período pago.
 const VIDEOS = [
-  { id: 1, title: 'Leitura de mercado — semana 23',  duration: '18:42', date: '08 Jun 2026', grad: ['#16304f', '#2a5fc7'] },
-  { id: 2, title: 'Carteiras que importam agora',     duration: '12:10', date: '02 Jun 2026', grad: ['#0d2240', '#3d7ae8'] },
-  { id: 3, title: 'Narrativas para o próximo ciclo',  duration: '24:05', date: '28 Mai 2026', grad: ['#142a52', '#5a98f0'] },
-  { id: 4, title: 'Setup de entrada: o que olhar',    duration: '09:31', date: '20 Mai 2026', grad: ['#0f1e3d', '#7AA7FF'] },
-  { id: 5, title: 'Análise do fluxo SOL',             duration: '15:48', date: '12 Mai 2026', grad: ['#1a3360', '#4d8de8'] },
-  { id: 6, title: 'Gestão de risco sem firula',       duration: '11:22', date: '05 Mai 2026', grad: ['#0c1c38', '#3A7BD5'] },
+  { id: 1, title: 'Gerenciamento de Carteira', duration: '18:42', date: '08 Jun 2026', grad: ['#16304f', '#2a5fc7'] },
+  { id: 2, title: 'Como desenvolver sua Psicologia do Trading e se tornar um trader lucrativo', duration: '12:10', date: '02 Jun 2026', grad: ['#0d2240', '#3d7ae8'] },
+  { id: 3, title: 'Entenda as narrativas', duration: '24:05', date: '28 Mai 2026', grad: ['#142a52', '#5a98f0'] },
+  { id: 4, title: 'Como evitar RugPulls (1/2)', duration: '09:31', date: '20 Mai 2026', grad: ['#0f1e3d', '#7AA7FF'] },
+  { id: 5, title: 'Como evitar RugPulls (2/2)', duration: '15:48', date: '12 Mai 2026', grad: ['#1a3360', '#4d8de8'] },
+  { id: 6, title: 'Como “trackear” as carteiras de KOLs corretamente', duration: '11:22', date: '05 Mai 2026', grad: ['#0c1c38', '#3A7BD5'] },
 ]
 
 function VideoCard({ v }) {
